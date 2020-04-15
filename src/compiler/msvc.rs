@@ -231,6 +231,7 @@ ArgData! {
     ExtraHashFile(PathBuf),
     XClang(OsString), // -Xclang ...
     Clang(OsString), // -clang:...
+    ExternalIncludePath(PathBuf),
 }
 
 use self::ArgData::*;
@@ -399,6 +400,8 @@ msvc_args!(static ARGS: [ArgInfo<ArgData>; _] = [
     msvc_flag!("kernel", PassThrough),
     msvc_flag!("kernel-", PassThrough),
     msvc_flag!("nologo", PassThrough),
+    msvc_take_arg!("external:I", PathBuf, Separated, ExternalIncludePath),
+    msvc_flag!("fsyntax-only", SuppressCompilation),
     msvc_take_arg!("o", PathBuf, Separated, Output), // Deprecated but valid
     msvc_flag!("openmp", PassThrough),
     msvc_flag!("openmp:experimental", PassThrough),
@@ -489,6 +492,7 @@ pub fn parse_arguments(
             Some(SuppressCompilation) => {
                 return CompilerArguments::NotCompilation;
             }
+            | Some(ExternalIncludePath(_)) => {}
             Some(XClang(s)) => xclangs.push(s.clone()),
             Some(Clang(s)) => clangs.push(s.clone()),
             None => {
@@ -526,6 +530,10 @@ pub fn parse_arguments(
                         .iter_os_strings(),
                 )
             }
+            Some(ExternalIncludePath(_)) => common_args.extend(
+                arg.normalize(NormalizedDisposition::Separated)
+                    .iter_os_strings(),
+            ),
             _ => {}
         }
     }
@@ -1117,6 +1125,44 @@ mod test {
         );
         assert!(preprocessor_args.is_empty());
         assert_eq!(common_args, ovec!["-Zi", "-Fdfoo.pdb"]);
+        assert!(!msvc_show_includes);
+    }
+
+    #[test]
+    fn test_parse_arguments_external_include() {
+        // Parsing -external:I relies on -experimental:external being parsed
+        // and placed into common_args.
+        let args = ovec!["-c",
+                         "foo.c",
+                         "-Fofoo.obj",
+                         "-experimental:external",
+                         "-external:templates-",
+                         "-external:I",
+                         "path/to/system/includes"];
+        let ParsedArguments {
+            input,
+            language,
+            outputs,
+            preprocessor_args,
+            msvc_show_includes,
+            common_args,
+            ..
+        } = match parse_arguments(args) {
+            CompilerArguments::Ok(args) => args,
+            o => panic!("Got unexpected parse result: {:?}", o),
+        };
+        assert_eq!(Some("foo.c"), input.to_str());
+        assert_eq!(Language::C, language);
+        assert_map_contains!(
+            outputs,
+            ("obj", PathBuf::from("foo.obj"))
+        );
+        assert_eq!(1, outputs.len());
+        assert!(preprocessor_args.is_empty());
+        assert_eq!(common_args, ovec!["-experimental:external",
+                                      "-external:templates-",
+                                      "-external:I",
+                                      "path/to/system/includes"]);
         assert!(!msvc_show_includes);
     }
 
