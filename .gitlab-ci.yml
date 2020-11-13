@@ -56,6 +56,14 @@ fmt:
   stage:                           check
   script:
     - cargo fmt -- --check
+  allow_failure:                   true
+
+clippy:
+  <<:                              *docker-env
+  stage:                           check
+  script:
+    - cargo clippy --all-targets
+  allow_failure:                   true
 
 #### stage:                       test
 
