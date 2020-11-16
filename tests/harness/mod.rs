@@ -227,7 +227,7 @@ pub struct DistSystem {
     sccache_dist: PathBuf,
     tmpdir: PathBuf,
 
-    pod_name: String,
+    // pod_name: String,
 
     scheduler_name: Option<String>,
     server_names: Vec<String>,
@@ -256,21 +256,26 @@ impl DistSystem {
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
 
-        let child = podman!("pod", "create", "-p", format!("{},{}", SCHEDULER_PORT, SERVER_PORT))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
+        // let child = podman!(
+        //     "pod",
+        //     "create",
+        //     "--network=host",
+        //     "-p", format!("{},{}", SCHEDULER_PORT, SERVER_PORT)
+        // )
+        //     .stdout(Stdio::piped())
+        //     .stderr(Stdio::piped())
+        //     .spawn()
+        //     .unwrap();
+        // let output = child.wait_with_output().unwrap();
 
-        let s = String::from_utf8(output.stdout).unwrap();
-        let pod_name = s.trim().to_owned();
+        // let s = String::from_utf8(output.stdout).unwrap();
+        // let pod_name = s.trim().to_owned();
 
         Self {
             sccache_dist: sccache_dist.to_owned(),
             tmpdir,
 
-            pod_name,
+            // pod_name,
             scheduler_name: None,
             server_names: vec![],
             server_pids: vec![],
@@ -292,7 +297,9 @@ impl DistSystem {
         let scheduler_name = make_container_name("scheduler");
         let output = podman!(
                 "run",
-                "--pod", &self.pod_name,
+                "-p", SCHEDULER_PORT.to_string(),
+                "--network=host",
+                // "--pod", &self.pod_name,
                 "--name",
                 &scheduler_name,
                 "-e",
@@ -345,9 +352,9 @@ impl DistSystem {
     }
 
     pub fn inspect_pod(&self) {
-        let child = podman!("pod", "inspect", &self.pod_name).spawn().unwrap();
-        let output = child.wait_with_output().unwrap();
-        check_output(&output);
+        // let child = podman!("pod", "inspect", &self.pod_name).spawn().unwrap();
+        // let output = child.wait_with_output().unwrap();
+        // check_output(&output);
     }
 
     pub fn add_server(&mut self) -> ServerHandle {
@@ -358,7 +365,9 @@ impl DistSystem {
         let server_name = make_container_name("server");
         let output = podman!(
                 "run",
-                "--pod", &self.pod_name,
+                // "--pod", &self.pod_name,
+                "--network=host",
+                "-p", SERVER_PORT.to_string(),
                 // Important for the bubblewrap builder
                 "--privileged",
                 "--name",
@@ -611,9 +620,9 @@ impl Drop for DistSystem {
             }
         }
 
-        if let Ok(mut x) = podman!("pod", "rm", &self.pod_name).spawn() {
-            let _ = x.wait();
-        }
+        // if let Ok(mut x) = podman!("pod", "rm", &self.pod_name).spawn() {
+        //     let _ = x.wait();
+        // }
 
         for (
             container,
