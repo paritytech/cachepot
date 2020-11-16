@@ -227,6 +227,8 @@ pub struct DistSystem {
     sccache_dist: PathBuf,
     tmpdir: PathBuf,
 
+    pod_name: String,
+
     scheduler_name: Option<String>,
     server_names: Vec<String>,
     server_pids: Vec<Pid>,
@@ -254,10 +256,21 @@ impl DistSystem {
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
 
+        let child = podman!("pod", "create", "-p", format!("{},{}", SCHEDULER_PORT, SERVER_PORT))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+
+        let s = String::from_utf8(output.stdout).unwrap();
+        let pod_name = s.trim().to_owned();
+
         Self {
             sccache_dist: sccache_dist.to_owned(),
             tmpdir,
 
+            pod_name,
             scheduler_name: None,
             server_names: vec![],
             server_pids: vec![],
@@ -279,6 +292,7 @@ impl DistSystem {
         let scheduler_name = make_container_name("scheduler");
         let output = podman!(
                 "run",
+                "--pod", &self.pod_name,
                 "--name",
                 &scheduler_name,
                 "-e",
@@ -297,15 +311,9 @@ impl DistSystem {
                 ),
                 "-d",
                 DIST_IMAGE,
-                "bash",
-                "-c",
-                &format!(
-                    r#"
-                    set -o errexit &&
-                    exec /sccache-dist scheduler --config {cfg}
-                "#,
-                    cfg = scheduler_cfg_container_path.to_str().unwrap()
-                ),
+                "/sccache-dist",
+                "scheduler",
+                "--config", scheduler_cfg_container_path.to_str().unwrap(),
             )
             .output()
             .unwrap();
@@ -336,6 +344,12 @@ impl DistSystem {
         );
     }
 
+    pub fn inspect_pod(&self) {
+        let child = podman!("pod", "inspect", &self.pod_name).spawn().unwrap();
+        let output = child.wait_with_output().unwrap();
+        check_output(&output);
+    }
+
     pub fn add_server(&mut self) -> ServerHandle {
         let server_cfg_relpath = format!("server-cfg-{}.json", self.server_names.len());
         let server_cfg_path = self.tmpdir.join(&server_cfg_relpath);
@@ -344,6 +358,7 @@ impl DistSystem {
         let server_name = make_container_name("server");
         let output = podman!(
                 "run",
+                "--pod", &self.pod_name,
                 // Important for the bubblewrap builder
                 "--privileged",
                 "--name",
@@ -395,6 +410,7 @@ impl DistSystem {
             url,
         };
         self.wait_server_ready(&handle);
+
         handle
     }
 
@@ -490,32 +506,34 @@ impl DistSystem {
     }
 
     fn container_ip(&self, name: &str) -> IpAddr {
-        let output = podman!(
-                "inspect",
-                "--format",
-                "{{ .NetworkSettings.IPAddress }}",
-                name,
-            )
-            .output()
-            .unwrap();
-        check_output(&output);
-        let stdout = dbg!(String::from_utf8(output.stdout)).unwrap();
-        stdout.trim().to_owned().parse().unwrap()
+        // let output = podman!(
+        //         "inspect",
+        //         "--format",
+        //         "{{ .NetworkSettings.IPAddress }}",
+        //         name,
+        //     )
+        //     .output()
+        //     .unwrap();
+        // check_output(&output);
+        // let stdout = dbg!(String::from_utf8(output.stdout)).unwrap();
+        // stdout.trim().to_owned().parse().unwrap()
+        "127.0.0.1".parse().unwrap()
     }
 
     // The interface that the host sees on the podman network (typically 'podman0')
     fn host_interface_ip(&self) -> IpAddr {
-        let output = podman!(
-                "inspect",
-                "--format",
-                "{{ .NetworkSettings.Gateway }}",
-                self.scheduler_name.as_ref().unwrap(),
-            )
-            .output()
-            .unwrap();
-        check_output(&output);
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        stdout.trim().to_owned().parse().unwrap()
+        // let output = podman!(
+        //         "inspect",
+        //         "--format",
+        //         "{{ .NetworkSettings.Gateway }}",
+        //         self.scheduler_name.as_ref().unwrap(),
+        //     )
+        //     .output()
+        //     .unwrap();
+        // check_output(&output);
+        // let stdout = String::from_utf8(output.stdout).unwrap();
+        // stdout.trim().to_owned().parse().unwrap()
+        "127.0.0.1".parse().unwrap()
     }
 }
 
@@ -566,6 +584,7 @@ impl Drop for DistSystem {
                 .output()
                 .map(|o| outputs.push((server_name, o))));
         }
+
         for &pid in self.server_pids.iter() {
             droperr!(nix::sys::signal::kill(pid, Signal::SIGINT));
             thread::sleep(Duration::from_millis(100));
@@ -590,6 +609,10 @@ impl Drop for DistSystem {
                         Ok(())
                     }));
             }
+        }
+
+        if let Ok(mut x) = podman!("pod", "rm", &self.pod_name).spawn() {
+            let _ = x.wait();
         }
 
         for (
