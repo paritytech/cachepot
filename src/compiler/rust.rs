@@ -1845,10 +1845,13 @@ impl pkg::InputsPackager for RustInputsPackager {
 
         // If we're just creating an rlib then the only thing inspected inside dependency rlibs is the
         // metadata, in which case we can create a trimmed rlib (which is actually a .a) with the metadata
-        let can_trim_rlibs = matches!(crate_types, CrateTypes {
-            rlib: true,
-            staticlib: false,
-        });
+        let can_trim_rlibs = matches!(
+            crate_types,
+            CrateTypes {
+                rlib: true,
+                staticlib: false,
+            }
+        );
 
         let mut builder = tar::Builder::new(wtr);
 
@@ -2277,7 +2280,7 @@ fn parse_rustc_z_ls(stdout: &str) -> Result<Vec<&str>> {
     }
 
     for line in lines {
-        if ! line.is_empty() {
+        if !line.is_empty() {
             bail!("Trailing non-blank lines in rustc -Z ls output")
         }
     }

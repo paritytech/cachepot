@@ -128,7 +128,7 @@ impl CCompilerImpl for NVCC {
 
         //Need to chain the dependency generation and the preprocessor
         //to emulate a `proper` front end
-        if ! parsed_args.dependency_args.is_empty() {
+        if !parsed_args.dependency_args.is_empty() {
             let first = run_input_output(dep_before_preprocessor(), None);
             let second = run_input_output(cmd, None);
             Box::new(first.join(second).map(|(f, s)| s))

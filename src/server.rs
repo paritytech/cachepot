@@ -873,8 +873,7 @@ where
 
         let path2 = path.clone();
         let path1 = path.clone();
-        let env = env
-            .to_vec();
+        let env = env.to_vec();
 
         let resolve_w_proxy = {
             let compiler_proxies_borrow = self.compiler_proxies.borrow();
@@ -1118,7 +1117,7 @@ where
             let mut stats = me.stats.borrow_mut();
             let mut res = CompileFinished {
                 color_mode: _color_mode,
-                .. CompileFinished::default()
+                ..CompileFinished::default()
             };
             match result {
                 Ok((compiled, out)) => {

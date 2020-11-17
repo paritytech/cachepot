@@ -1398,10 +1398,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         match cached {
             CompileResult::CacheMiss(MissType::Normal, DistType::NoDist, _, f) => {
                 // wait on cache write future so we don't race with it!
@@ -1435,10 +1432,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         assert_eq!(CompileResult::CacheHit(Duration::new(0, 0)), cached);
         assert_eq!(exit_status(0), res.status);
         assert_eq!(COMPILER_STDOUT, res.stdout.as_slice());
@@ -1505,10 +1499,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         match cached {
             CompileResult::CacheMiss(MissType::Normal, DistType::Ok(_), _, f) => {
                 // wait on cache write future so we don't race with it!
@@ -1542,10 +1533,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         assert_eq!(CompileResult::CacheHit(Duration::new(0, 0)), cached);
         assert_eq!(exit_status(0), res.status);
         assert_eq!(COMPILER_STDOUT, res.stdout.as_slice());
@@ -1619,10 +1607,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         match cached {
             CompileResult::CacheMiss(MissType::CacheReadError, DistType::NoDist, _, f) => {
                 // wait on cache write future so we don't race with it!
@@ -1704,10 +1689,7 @@ LLVM version: 6.0",
             }))
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         match cached {
             CompileResult::CacheMiss(MissType::Normal, DistType::NoDist, _, f) => {
                 // wait on cache write future so we don't race with it!
@@ -1734,10 +1716,7 @@ LLVM version: 6.0",
             .wait()
             .unwrap();
         // Ensure that the object file was created.
-        assert_eq!(
-            true,
-            fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-        );
+        assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
         match cached {
             CompileResult::CacheMiss(MissType::ForcedRecache, DistType::NoDist, _, f) => {
                 // wait on cache write future so we don't race with it!
@@ -1898,10 +1877,7 @@ LLVM version: 6.0",
                 .wait()
                 .unwrap();
             // Ensure that the object file was created.
-            assert_eq!(
-                true,
-                fs::metadata(&obj).and_then(|m| Ok(m.len() > 0)).unwrap()
-            );
+            assert_eq!(true, fs::metadata(&obj).map(|m| m.len() > 0).unwrap());
             match cached {
                 CompileResult::CacheMiss(MissType::ForcedRecache, DistType::Error, _, f) => {
                     // wait on cache write future so we don't race with it!
