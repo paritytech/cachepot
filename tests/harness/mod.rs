@@ -298,6 +298,9 @@ impl DistSystem {
         let output = podman!(
                 "run",
                 "-p", SCHEDULER_PORT.to_string(),
+                "--cap-add=CAP_SYS_ADMIN",
+                "--cap-add=CAP_SETFCAP",
+                "--userns=keep-id",
                 "--network=host",
                 // "--pod", &self.pod_name,
                 "--name",
@@ -369,9 +372,12 @@ impl DistSystem {
                 "--network=host",
                 "-p", SERVER_PORT.to_string(),
                 // Important for the bubblewrap builder
-                "--privileged",
                 "--name",
                 &server_name,
+                "--userns=keep-id",
+                "--cap-add=CAP_SYS_ADMIN",
+                "--cap-add=CAP_SETFCAP",
+                // "--privileged",
                 "-e",
                 "RUST_LOG=sccache=trace",
                 "-e",

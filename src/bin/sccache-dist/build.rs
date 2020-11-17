@@ -296,12 +296,12 @@ impl OverlayBuilder {
                     fs::create_dir(&target_dir)
                         .context("Failed to create overlay target directory")?;
 
-                    let () = Overlay::writable(
+                    Overlay::writable(
                         iter::once(overlay.toolchain_dir.as_path()),
                         upper_dir,
                         work_dir,
                         &target_dir,
-                        // This error is unfortunately not Send+Sync
+                        // This error is unfortunately not `Send+Sync`
                     )
                     .mount()
                     .map_err(|e| anyhow!("Failed to mount overlay FS: {}", e.to_string()))?;

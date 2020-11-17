@@ -9,4 +9,5 @@ RUN cd /bubblewrap-0.3.1 && \
     make
 
 FROM fedora:33
+USER root
 COPY --from=bwrap-build /bubblewrap-0.3.1/bwrap /bwrap
