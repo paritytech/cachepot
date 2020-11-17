@@ -14,7 +14,6 @@
 
 #![allow(clippy::complexity)]
 #![deny(clippy::perf)]
-
 #![deny(rust_2018_idioms)]
 #![recursion_limit = "256"]
 
