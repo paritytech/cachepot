@@ -1,3 +1,5 @@
+#![allow(clippy::unnecessary_lazy_evaluations)]
+
 use std::cmp::Ordering;
 use std::error::Error;
 use std::ffi::OsString;
@@ -357,7 +359,7 @@ impl IntoArg for PathBuf {
         self.into()
     }
     fn into_arg_string(self, transformer: PathTransformerFn<'_>) -> ArgToStringResult {
-        transformer(&self).ok_or(ArgToStringError::FailedPathTransform(self))
+        transformer(&self).ok_or_else(|| ArgToStringError::FailedPathTransform(self))
     }
 }
 impl IntoArg for String {
