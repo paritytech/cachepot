@@ -1003,7 +1003,9 @@ mod tests {
         assert_eq!(raw.iter_os_strings().collect::<Vec<_>>(), ovec!["value"]);
         assert_eq!(unknown.iter_os_strings().collect::<Vec<_>>(), ovec!["-foo"]);
         assert_eq!(
-            arg!(Flag("-foo", FooFlag)).iter_os_strings().collect::<Vec<_>>(),
+            arg!(Flag("-foo", FooFlag))
+                .iter_os_strings()
+                .collect::<Vec<_>>(),
             ovec!["-foo"]
         );
 
@@ -1020,13 +1022,22 @@ mod tests {
         assert_eq!(arg.iter_os_strings().collect::<Vec<_>>(), ovec!["-foo=bar"]);
 
         let arg = arg!(WithValue("-foo", Foo("bar"), CanBeConcatenated));
-        assert_eq!(arg.iter_os_strings().collect::<Vec<_>>(), ovec!["-foo", "bar"]);
+        assert_eq!(
+            arg.iter_os_strings().collect::<Vec<_>>(),
+            ovec!["-foo", "bar"]
+        );
 
         let arg = arg!(WithValue("-foo", Foo("bar"), CanBeConcatenated('=')));
-        assert_eq!(arg.iter_os_strings().collect::<Vec<_>>(), ovec!["-foo", "bar"]);
+        assert_eq!(
+            arg.iter_os_strings().collect::<Vec<_>>(),
+            ovec!["-foo", "bar"]
+        );
 
         let arg = arg!(WithValue("-foo", Foo("bar"), Separated));
-        assert_eq!(arg.iter_os_strings().collect::<Vec<_>>(), ovec!["-foo", "bar"]);
+        assert_eq!(
+            arg.iter_os_strings().collect::<Vec<_>>(),
+            ovec!["-foo", "bar"]
+        );
     }
 
     #[test]
