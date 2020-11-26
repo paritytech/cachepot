@@ -303,27 +303,26 @@ mod server {
     const HEARTBEAT_ERROR_INTERVAL: Duration = Duration::from_secs(10);
     pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
 
-
     use chrono::Datelike;
     use chrono::Timelike;
-    use picky::{
-        hash::HashAlgorithm,
-        signature::SignatureAlgorithm,
-        key::{PrivateKey, PublicKey},
-    };
     use picky::x509::{
         certificate::CertificateBuilder,
         date::UTCDate,
-        Extensions,
         extension::ExtendedKeyUsage,
         extension::KeyUsage,
         key_id_gen_method::KeyIdGenMethod,
         name::{DirectoryName, GeneralNames},
+        Extensions,
+    };
+    use picky::{
+        hash::HashAlgorithm,
+        key::{PrivateKey, PublicKey},
+        signature::SignatureAlgorithm,
     };
     use rsa_pem::KeyExt;
     use sha2::Digest;
-    use std::ops::DerefMut;
     use std::net::{IpAddr, SocketAddr};
+    use std::ops::DerefMut;
 
     pub(crate) fn create_https_cert_and_privkey(
         addr: SocketAddr,
@@ -365,7 +364,7 @@ mod server {
         let name = addr.to_string();
 
         let issuer_name = DirectoryName::new_common_name(name.clone());
-        let subject_name = DirectoryName::new_common_name(name.clone());
+        let subject_name = DirectoryName::new_common_name(name);
         let octets = match addr.ip() {
             IpAddr::V4(inner) => inner.octets().to_vec(),
             IpAddr::V6(inner) => inner.octets().to_vec(),
@@ -1468,7 +1467,7 @@ mod tests {
 
         let convert = |tag: &'static str, data: &[u8]| {
             let mut bufread = std::io::BufReader::new(data);
-            let pem = picky::pem::Pem::read_from(&mut bufread).expect("PEM must be valid. qed");
+            let pem = picky::pem::Pem::read_from(&mut bufread).expect("PEM must be valid. Q.E.D.");
             println!("{} {}", tag, &pem);
             let mut f = std::fs::OpenOptions::new()
                 .truncate(true)
@@ -1477,7 +1476,7 @@ mod tests {
                 .open(format!("./{}.cert.pem", tag))
                 .unwrap();
             f.write_all(pem.to_string().as_bytes()).unwrap();
-            let cert = picky::x509::Cert::from_pem(&pem).expect("Cert from PEM must be ok. qed");
+            let cert = picky::x509::Cert::from_pem(&pem).expect("Cert from PEM must be ok. Q.E.D.");
             cert
         };
 

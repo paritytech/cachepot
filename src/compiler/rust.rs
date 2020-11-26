@@ -516,7 +516,7 @@ where
         let lookup = run_input_output(child, None)
             .map_err(|e| anyhow!("Failed to execute rustup which rustc: {}", e))
             .and_then(move |output| {
-                String::from_utf8(output.stdout.clone())
+                String::from_utf8(output.stdout)
                     .map_err(|e| anyhow!("Failed to parse output of rustup which rustc: {}", e))
                     .and_then(|stdout| {
                         let proxied_compiler = PathBuf::from(stdout.trim());
@@ -626,7 +626,7 @@ impl RustupProxy {
             })
             .and_then(move |state| {
                 let state = match state {
-                    ProxyPath::Candidate(_) => { unreachable!("qed") }
+                    ProxyPath::Candidate(_) => { unreachable!("Q.E.D.") }
                     ProxyPath::ToBeDiscovered => {
                         // simple check: is there a rustup in the same parent dir as rustc?
                         // that would be the prefered one
@@ -681,14 +681,14 @@ impl RustupProxy {
                     let mut child = creator.new_command_sync(proxy_executable.to_owned());
                     child.env_clear().envs(ref_env(&env2)).args(&["--version"]);
                     let rustup_candidate_check = run_input_output(child, None).map(move |output| {
-                        String::from_utf8(output.stdout.clone())
+                        String::from_utf8(output.stdout)
                             .map_err(|_e| {
                                 anyhow!("Response of `rustup --version` is not valid UTF-8")
                             })
                             .and_then(|stdout| {
                                 if stdout.trim().starts_with("rustup ") {
                                     trace!("PROXY rustup --version produced: {}", &stdout);
-                                    Self::new(&proxy_executable).map(|proxy| Some(proxy))
+                                    Self::new(&proxy_executable).map(Some)
                                 } else {
                                     Err(anyhow!("Unexpected output or `rustup --version`"))
                                 }
@@ -754,7 +754,7 @@ impl IntoArg for ArgCrateTypes {
             .chain(if rlib { Some("rlib") } else { None })
             .chain(if staticlib { Some("staticlib") } else { None })
             .collect();
-        types.sort();
+        types.sort_unstable();
         let types_string = types.join(",");
         types_string.into()
     }
@@ -770,7 +770,7 @@ impl IntoArg for ArgCrateTypes {
             .chain(if rlib { Some("rlib") } else { None })
             .chain(if staticlib { Some("staticlib") } else { None })
             .collect();
-        types.sort();
+        types.sort_unstable();
         let types_string = types.join(",");
         Ok(types_string)
     }
@@ -1224,8 +1224,6 @@ where
         pool: &ThreadPool,
         _rewrite_includes_only: bool,
     ) -> SFuture<HashResult> {
-        let me = *self;
-        #[rustfmt::skip] // https://github.com/rust-lang/rustfmt/issues/3759
         let RustHasher {
             executable,
             host,
@@ -1247,9 +1245,10 @@ where
                     has_json,
                     ..
                 },
-        } = me;
+        } = *self;
         trace!("[{}]: generate_hash_key", crate_name);
-        // TODO: this doesn't produce correct arguments if they should be concatenated - should use iter_os_strings
+        // TODO: this doesn't produce correct arguments if they
+        // TODO: should be concatenated - should use iter_os_strings
         let os_string_arguments: Vec<(OsString, Option<OsString>)> = arguments
             .iter()
             .map(|arg| {
@@ -1845,15 +1844,13 @@ impl pkg::InputsPackager for RustInputsPackager {
 
         // If we're just creating an rlib then the only thing inspected inside dependency rlibs is the
         // metadata, in which case we can create a trimmed rlib (which is actually a .a) with the metadata
-        let can_trim_rlibs = if let CrateTypes {
-            rlib: true,
-            staticlib: false,
-        } = crate_types
-        {
-            true
-        } else {
-            false
-        };
+        let can_trim_rlibs = matches!(
+            crate_types,
+            CrateTypes {
+                rlib: true,
+                staticlib: false,
+            }
+        );
 
         let mut builder = tar::Builder::new(wtr);
 
@@ -2242,7 +2239,7 @@ fn parse_rustc_z_ls(stdout: &str) -> Result<Vec<&str>> {
     let mut dep_names = vec![];
 
     while let Some(line) = lines.next() {
-        if line == "" {
+        if line.is_empty() {
             break;
         }
 
@@ -2282,7 +2279,7 @@ fn parse_rustc_z_ls(stdout: &str) -> Result<Vec<&str>> {
     }
 
     for line in lines {
-        if line != "" {
+        if !line.is_empty() {
             bail!("Trailing non-blank lines in rustc -Z ls output")
         }
     }
@@ -2910,7 +2907,7 @@ c:/foo/bar.rs:
 
     #[test]
     fn test_generate_hash_key() {
-        drop(env_logger::try_init());
+        let _ = env_logger::Builder::new().is_test(true).try_init();
         let f = TestFixture::new();
         const FAKE_DIGEST: &str = "abcd1234";
         // We'll just use empty files for each of these.

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::complexity)]
+#![deny(clippy::perf)]
 #![deny(rust_2018_idioms)]
 #![recursion_limit = "256"]
 
@@ -19,8 +21,6 @@
 extern crate clap;
 #[macro_use]
 extern crate counted_array;
-#[macro_use]
-extern crate futures;
 #[cfg(feature = "jsonwebtoken")]
 use jsonwebtoken as jwt;
 #[macro_use]

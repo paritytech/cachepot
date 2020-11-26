@@ -1,3 +1,6 @@
+#![allow(clippy::complexity)]
+#![deny(clippy::perf)]
+
 #[macro_use]
 extern crate clap;
 #[macro_use]
@@ -73,7 +76,7 @@ fn main() {
                 println!("sccache-dist: caused by: {}", e);
             }
             get_app().print_help().unwrap();
-            println!("");
+            println!();
             1
         }
     });
@@ -304,12 +307,8 @@ fn run(command: Command) -> Result<i32> {
                     issuer,
                     jwks_url,
                 } => Box::new(
-                    token_check::ValidJWTCheck::new(
-                        audience.to_owned(),
-                        issuer.to_owned(),
-                        &jwks_url,
-                    )
-                    .context("Failed to create a checker for valid JWTs")?,
+                    token_check::ValidJWTCheck::new(audience, issuer, &jwks_url)
+                        .context("Failed to create a checker for valid JWTs")?,
                 ),
                 scheduler_config::ClientAuth::Mozilla { required_groups } => {
                     Box::new(token_check::MozillaCheck::new(required_groups))
@@ -441,6 +440,7 @@ struct JobDetail {
 
 // To avoid deadlicking, make sure to do all locking at once (i.e. no further locking in a downward scope),
 // in alphabetical order
+#[derive(Default)]
 pub struct Scheduler {
     job_count: AtomicUsize,
 
@@ -464,11 +464,7 @@ struct ServerDetails {
 
 impl Scheduler {
     pub fn new() -> Self {
-        Scheduler {
-            job_count: AtomicUsize::new(0),
-            jobs: Mutex::new(BTreeMap::new()),
-            servers: Mutex::new(HashMap::new()),
-        }
+        Scheduler::default()
     }
 
     fn prune_servers(
@@ -697,7 +693,7 @@ impl SchedulerIncoming for Scheduler {
                     }
                 }
 
-                if stale_jobs.len() > 0 {
+                if !stale_jobs.is_empty() {
                     warn!(
                         "The following stale jobs will be de-allocated: {:?}",
                         stale_jobs
@@ -926,6 +922,6 @@ impl ServerIncoming for Server {
         requester
             .do_update_job_state(job_id, JobState::Complete)
             .context("Updating job state failed")?;
-        return res;
+        res
     }
 }
