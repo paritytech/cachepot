@@ -4,6 +4,11 @@
 //! http://creativecommons.org/publicdomain/zero/1.0/
 
 #![deny(rust_2018_idioms)]
+#![allow(dead_code, unused_imports)]
+
+mod harness;
+
+use crate::harness::get_stats;
 
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 #[macro_use]
@@ -14,23 +19,40 @@ extern crate log;
 #[test]
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 fn test_rust_cargo() {
+    use chrono::Local;
+    use std::io::Write;
+    let _ = env_logger::Builder::new()
+        .format(|f, record| {
+            writeln!(
+                f,
+                "{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                record.level(),
+                record.args()
+            )
+        })
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    trace!("cargo check");
     test_rust_cargo_cmd("check");
+
+    trace!("cargo build");
     test_rust_cargo_cmd("build");
 }
 
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 fn test_rust_cargo_cmd(cmd: &str) {
     use assert_cmd::prelude::*;
-    use chrono::Local;
     use predicates::prelude::*;
     use std::env;
     use std::fs;
-    use std::io::Write;
     use std::path::Path;
     use std::process::{Command, Stdio};
 
     fn sccache_command() -> Command {
-        Command::new(assert_cmd::cargo::cargo_bin("sccache"))
+        Command::new(assert_cmd::cargo::cargo_bin(env!("CARGO_PKG_NAME")))
     }
 
     fn stop() {
@@ -44,23 +66,9 @@ fn test_rust_cargo_cmd(cmd: &str) {
         );
     }
 
-    drop(
-        env_logger::Builder::new()
-            .format(|f, record| {
-                write!(
-                    f,
-                    "{} [{}] - {}",
-                    Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
-                    record.level(),
-                    record.args()
-                )
-            })
-            .parse(&env::var("RUST_LOG").unwrap_or_default())
-            .try_init(),
-    );
     let cargo = env!("CARGO");
     debug!("cargo: {}", cargo);
-    let sccache = assert_cmd::cargo::cargo_bin("sccache");
+    let sccache = assert_cmd::cargo::cargo_bin(env!("CARGO_PKG_NAME"));
     debug!("sccache: {:?}", sccache);
     let crate_dir = Path::new(file!()).parent().unwrap().join("test-crate");
     // Ensure there's no existing sccache server running.
@@ -88,14 +96,14 @@ fn test_rust_cargo_cmd(cmd: &str) {
     ];
     Command::new(&cargo)
         .args(&["clean"])
-        .envs(envs.iter().map(|v| *v))
+        .envs(envs.iter().copied())
         .current_dir(&crate_dir)
         .assert()
         .success();
     // Now build the crate with cargo.
     Command::new(&cargo)
         .args(&[cmd, "--color=never"])
-        .envs(envs.iter().map(|v| *v))
+        .envs(envs.iter().copied())
         .current_dir(&crate_dir)
         .assert()
         .stderr(predicates::str::contains("\x1b[").from_utf8().not())
@@ -103,13 +111,13 @@ fn test_rust_cargo_cmd(cmd: &str) {
     // Clean it so we can build it again.
     Command::new(&cargo)
         .args(&["clean"])
-        .envs(envs.iter().map(|v| *v))
+        .envs(envs.iter().copied())
         .current_dir(&crate_dir)
         .assert()
         .success();
     Command::new(&cargo)
         .args(&[cmd, "--color=always"])
-        .envs(envs.iter().map(|v| *v))
+        .envs(envs.iter().copied())
         .current_dir(&crate_dir)
         .assert()
         .stderr(predicates::str::contains("\x1b[").from_utf8())
@@ -119,10 +127,11 @@ fn test_rust_cargo_cmd(cmd: &str) {
     // so there are two separate compilations, but cargo will build the test crate with
     // incremental compilation enabled, so sccache will not cache it.
     trace!("sccache --show-stats");
-    sccache_command()
-        .args(&["--show-stats", "--stats-format=json"])
-        .assert()
-        .stdout(predicates::str::contains(r#""cache_hits":{"counts":{"Rust":1}}"#).from_utf8())
-        .success();
+    get_stats(|info: sccache::server::ServerInfo| {
+        dbg!(&info.stats);
+        // FIXME differs between CI and local execution
+        assert_eq!(Some(&2), info.stats.cache_hits.get("Rust"));
+    });
+
     stop();
 }

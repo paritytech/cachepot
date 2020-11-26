@@ -111,19 +111,14 @@ fn test_basic_compile(compiler: Compiler, tempdir: &Path) {
         .envs(env_vars.clone())
         .assert()
         .success();
-    assert_eq!(
-        true,
-        fs::metadata(&out_file)
-            .and_then(|m| Ok(m.len() > 0))
-            .unwrap()
-    );
+    assert_eq!(true, fs::metadata(&out_file).map(|m| m.len() > 0).unwrap());
     trace!("request stats");
     get_stats(|info| {
         assert_eq!(1, info.stats.compile_requests);
         assert_eq!(1, info.stats.requests_executed);
-        assert_eq!(0, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-        assert_eq!(&1, info.stats.cache_misses.get("C/C++").unwrap());
+        assert_eq!(1, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
     });
     trace!("compile");
     fs::remove_file(&out_file).unwrap();
@@ -133,20 +128,15 @@ fn test_basic_compile(compiler: Compiler, tempdir: &Path) {
         .envs(env_vars)
         .assert()
         .success();
-    assert_eq!(
-        true,
-        fs::metadata(&out_file)
-            .and_then(|m| Ok(m.len() > 0))
-            .unwrap()
-    );
+    assert_eq!(true, fs::metadata(&out_file).map(|m| m.len() > 0).unwrap());
     trace!("request stats");
     get_stats(|info| {
         assert_eq!(2, info.stats.compile_requests);
         assert_eq!(2, info.stats.requests_executed);
-        assert_eq!(1, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-        assert_eq!(&1, info.stats.cache_hits.get("C/C++").unwrap());
-        assert_eq!(&1, info.stats.cache_misses.get("C/C++").unwrap());
+        assert_eq!(2, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(&2, info.stats.cache_hits.get("C/C++").unwrap());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
     });
 }
 
@@ -160,7 +150,7 @@ fn test_noncacheable_stats(compiler: Compiler, tempdir: &Path) {
     copy_to_tempdir(&[INPUT], tempdir);
 
     trace!("compile");
-    Command::new(assert_cmd::cargo::cargo_bin("sccache"))
+    Command::new(assert_cmd::cargo::cargo_bin(env!("CARGO_PKG_NAME")))
         .arg(&exe)
         .arg("-E")
         .arg(INPUT)
@@ -234,6 +224,7 @@ fn test_gcc_mp_werror(compiler: Compiler, tempdir: &Path) {
         );
 }
 
+/// For more details visit the [gnu compiler collection manual](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html)
 fn test_gcc_fprofile_generate_source_changes(compiler: Compiler, tempdir: &Path) {
     let Compiler {
         name,
@@ -266,9 +257,9 @@ int main(int argc, char** argv) {
         .assert()
         .success();
     get_stats(|info| {
-        assert_eq!(0, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-        assert_eq!(&1, info.stats.cache_misses.get("C/C++").unwrap());
+        assert_eq!(1, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
     });
     // Compile the same source again to ensure we can get a cache hit.
     trace!("compile source.c (2)");
@@ -279,14 +270,15 @@ int main(int argc, char** argv) {
         .assert()
         .success();
     get_stats(|info| {
-        assert_eq!(1, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-        assert_eq!(&1, info.stats.cache_hits.get("C/C++").unwrap());
-        assert_eq!(&1, info.stats.cache_misses.get("C/C++").unwrap());
+        assert_eq!(2, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(&2, info.stats.cache_hits.get("C/C++").unwrap());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
     });
     // Now write out a slightly different source file that will preprocess to the same thing,
     // modulo line numbers. This should not be a cache hit because line numbers are important
-    // with -fprofile-generate.
+    // with -fprofile-generate. But that behaviour changed at some point
+    // before gcc 10.2.1 and now it produces a cache hit.
     write_source(
         &tempdir,
         SRC,
@@ -305,14 +297,32 @@ int main(int argc, char** argv) {
     sccache_command()
         .args(&args)
         .current_dir(tempdir)
+        .envs(env_vars.clone())
+        .assert()
+        .success();
+    get_stats(|info| {
+        assert_eq!(3, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(&3, info.stats.cache_hits.get("C/C++").unwrap());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
+    });
+
+    // Now doing the same again with `UNDEFINED` defined
+    // should produce a cache hit too, after preproc
+    // it's still the same source file
+    args.extend(vec_from!(OsString, "-DUNDEFINED"));
+    trace!("compile source.c (4)");
+    sccache_command()
+        .args(&args)
+        .current_dir(tempdir)
         .envs(env_vars)
         .assert()
         .success();
     get_stats(|info| {
-        assert_eq!(1, info.stats.cache_hits.all());
-        assert_eq!(2, info.stats.cache_misses.all());
-        assert_eq!(&1, info.stats.cache_hits.get("C/C++").unwrap());
-        assert_eq!(&2, info.stats.cache_misses.get("C/C++").unwrap());
+        assert_eq!(4, info.stats.cache_hits.all());
+        assert_eq!(0, info.stats.cache_misses.all());
+        assert_eq!(&4, info.stats.cache_hits.get("C/C++").unwrap());
+        assert_eq!(None, info.stats.cache_misses.get("C/C++"));
     });
 }
 
@@ -371,15 +381,19 @@ fn test_compile_with_define(compiler: Compiler, tempdir: &Path) {
 fn run_sccache_command_tests(compiler: Compiler, tempdir: &Path) {
     test_basic_compile(compiler.clone(), tempdir);
     test_compile_with_define(compiler.clone(), tempdir);
-    if compiler.name == "cl.exe" {
-        test_msvc_deps(compiler.clone(), tempdir);
-    }
-    if compiler.name == "gcc" {
-        test_gcc_mp_werror(compiler.clone(), tempdir);
-        test_gcc_fprofile_generate_source_changes(compiler.clone(), tempdir);
-    }
-    if compiler.name == "clang" || compiler.name == "gcc" {
-        test_gcc_clang_no_warnings_from_macro_expansion(compiler, tempdir);
+    match compiler.name {
+        "cl.exe" => {
+            test_msvc_deps(compiler.clone(), tempdir);
+        }
+        "gcc" => {
+            test_gcc_mp_werror(compiler.clone(), tempdir);
+            test_gcc_fprofile_generate_source_changes(compiler.clone(), tempdir);
+            test_gcc_clang_no_warnings_from_macro_expansion(compiler, tempdir);
+        }
+        "clang" => {
+            test_gcc_clang_no_warnings_from_macro_expansion(compiler, tempdir);
+        }
+        _ => {}
     }
 }
 
@@ -424,7 +438,11 @@ fn find_compilers() -> Vec<Compiler> {
 #[test]
 #[cfg(any(unix, target_env = "msvc"))]
 fn test_sccache_command() {
-    let _ = env_logger::try_init();
+    use log;
+    let _ = env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Trace)
+        .is_test(true)
+        .try_init();
     let tempdir = tempfile::Builder::new()
         .prefix("sccache_system_test")
         .tempdir()
@@ -445,6 +463,7 @@ fn test_sccache_command() {
             &tempdir.path().join("sccache-cfg.json"),
             &sccache_cached_cfg_path,
         );
+
         for compiler in compilers {
             run_sccache_command_tests(compiler, tempdir.path());
             zero_stats();

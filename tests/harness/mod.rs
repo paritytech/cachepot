@@ -111,7 +111,7 @@ pub fn write_source(path: &Path, filename: &str, contents: &str) {
 
 // Override any environment variables that could adversely affect test execution.
 pub fn sccache_command() -> Command {
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin("sccache"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin(env!("CARGO_PKG_NAME")));
     cmd.env("SCCACHE_CONF", "nonexistent_conf_path")
         .env("SCCACHE_CACHED_CONF", "nonexistent_cached_conf_path");
     cmd
@@ -128,8 +128,10 @@ pub fn sccache_client_cfg(tmpdir: &Path) -> sccache::config::FileConfig {
     fs::create_dir(tmpdir.join(cache_relpath)).unwrap();
     fs::create_dir(tmpdir.join(dist_cache_relpath)).unwrap();
 
-    let mut disk_cache: sccache::config::DiskCacheConfig = Default::default();
-    disk_cache.dir = tmpdir.join(cache_relpath);
+    let disk_cache = sccache::config::DiskCacheConfig {
+        dir: tmpdir.join(cache_relpath),
+        ..Default::default()
+    };
     sccache::config::FileConfig {
         cache: sccache::config::CacheConfigs {
             azure: None,
