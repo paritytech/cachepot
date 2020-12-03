@@ -12,7 +12,7 @@ variables:
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       100
   CARGO_INCREMENTAL:               0
-  CI_IMAGE:                        "paritytech/sccache-ci-linux:production"
+  CI_IMAGE:                        "paritytech/sccache-ci-ubuntu:production"
 
 workflow:
   rules:
