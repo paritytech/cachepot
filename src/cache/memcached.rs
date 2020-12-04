@@ -103,4 +103,9 @@ impl Storage for MemcachedCache {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
+
+    async fn clear(&self) -> Result<()> {
+        trace!("MemcachedCache::clear - NOT IMPLEMENTED");
+        Err(anyhow!("MemcachedCache::clear is not implemented"))
+    }
 }
