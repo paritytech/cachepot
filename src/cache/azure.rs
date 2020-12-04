@@ -87,4 +87,9 @@ impl Storage for AzureBlobCache {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
+
+    async fn clear(&self) -> Result<()> {
+        trace!("AzureBlobCache::clear - NOT IMPLEMENTED");
+        Err(anyhow!("AzureBlobCache::clear is not implemented"))
+    }
 }

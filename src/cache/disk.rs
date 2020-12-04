@@ -109,4 +109,10 @@ impl Storage for DiskCache {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(Some(self.lru.lock().unwrap().capacity()))
     }
+
+    fn clear(&self) -> SFuture<()> {
+        trace!("DiskCache::clear");
+        let lru = self.lru.clone();
+        Box::new(self.pool.spawn_fn(move || Ok(lru.lock().unwrap().clear()?)))
+    }
 }

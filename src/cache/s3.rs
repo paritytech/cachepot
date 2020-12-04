@@ -162,4 +162,9 @@ impl Storage for S3Cache {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
+
+    async fn clear(&self) -> Result<()> {
+        trace!("S3Cache::clear - NOT IMPLEMENTED");
+        Err(anyhow!("S3Cache::clear is not implemented"))
+    }
 }

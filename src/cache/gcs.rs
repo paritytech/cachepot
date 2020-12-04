@@ -504,6 +504,11 @@ impl Storage for GCSCache {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
+
+    async fn clear(&self) -> Result<()> {
+        trace!("GCSCache::clear - NOT IMPLEMENTED");
+        Err(anyhow!("GCSCache::clear is not implemented"))
+    }
 }
 
 #[tokio::test]
