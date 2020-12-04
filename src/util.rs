@@ -32,6 +32,7 @@ use std::time::Duration;
 
 use crate::errors::*;
 
+/// Exists for forward compat to make the transition in the future easier
 pub trait SpawnExt: task::SpawnExt {
     fn spawn_fn<F, T>(&self, f: F) -> SFuture<T>
     where
