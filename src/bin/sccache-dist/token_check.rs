@@ -157,7 +157,7 @@ impl MozillaCheck {
         let res_text = res
             .text()
             .context("Failed to interpret response from mozilla userinfo as string".to_owned())?;
-        if status.is_success() {
+        if !status.is_success() {
             bail!("JWT forwarded to {} returned {}: {}", url, status, res_text)
         }
 
