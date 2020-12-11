@@ -64,7 +64,7 @@ dist-test:
     DOCKER_HOST:                   tcp://localhost:2375
   image:                           docker:stable
   services:
-    - $CI_IMAGE
+    - paritytech/sccache-ci-ubuntu:production
   script:
     - cargo test --features=dist-tests,dist-client,dist-server
   tags:
