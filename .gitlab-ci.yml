@@ -64,6 +64,6 @@ dist-test:
     DOCKER_HOST:                   tcp://localhost:2375
   image:                           docker:stable
   services:
-    - docker:dind
+    - $CI_IMAGE
   script:
     - cargo test --features=dist-tests,dist-client,dist-server
