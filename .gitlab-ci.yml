@@ -67,3 +67,5 @@ dist-test:
     - $CI_IMAGE
   script:
     - cargo test --features=dist-tests,dist-client,dist-server
+  tags:
+    - kubernetes-parity-build
