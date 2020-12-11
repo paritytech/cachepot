@@ -55,3 +55,15 @@ workflow:
       - artifacts/
 
 #### stage:                       check
+
+dist-test:
+  <<:                              *docker-env
+  stage:                           check
+  variables:
+    DOCKER_DRIVER:                 overlay2
+    DOCKER_HOST:                   tcp://localhost:2375
+  image:                           docker:stable
+  services:
+    - docker:dind
+  script:
+    - cargo test --features=dist-tests,dist-client,dist-server
