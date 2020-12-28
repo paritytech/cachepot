@@ -411,7 +411,7 @@ impl Rust {
                 let env_vars = env_vars.to_owned();
                 pool.spawn_fn(move || {
                     RlibDepReader::new_with_check(executable, &env_vars)
-                }).compat()
+                })
             };
 
             let (sysroot_and_libs, rlib_dep_reader)=

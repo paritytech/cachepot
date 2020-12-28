@@ -959,7 +959,7 @@ diab
 "
     .to_vec();
     let (tempdir, src) = write_temp_file(&pool, "testfile.c".as_ref(), test)
-        .compat()
+
         .await?;
 
     let mut cmd = creator.clone().new_command_sync(&executable);

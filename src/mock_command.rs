@@ -63,11 +63,11 @@ use tokio_02::process::{self, ChildStderr, ChildStdin, ChildStdout};
 #[async_trait::async_trait]
 pub trait CommandChild {
     /// The type of the process' standard input.
-    type I: AsyncWrite + Sync + Send + 'static;
+    type I: AsyncWrite + Unpin + Sync + Send + 'static;
     /// The type of the process' standard output.
-    type O: AsyncRead + Sync + Send + 'static;
+    type O: AsyncRead + Unpin + Sync + Send + 'static;
     /// The type of the process' standard error.
-    type E: AsyncRead + Sync + Send + 'static;
+    type E: AsyncRead + Unpin + Sync + Send + 'static;
 
     /// Take the stdin object from the process, if available.
     fn take_stdin(&mut self) -> Option<Self::I>;

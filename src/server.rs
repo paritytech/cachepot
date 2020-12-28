@@ -1248,7 +1248,7 @@ where
         };
 
         tokio_compat::runtime::current_thread::TaskExecutor::current()
-            .spawn_local(Box::pin(task).compat())
+            .spawn_local(Box::pin(task))
             .unwrap();
     }
 }
