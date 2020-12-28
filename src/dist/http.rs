@@ -1268,7 +1268,8 @@ mod client {
             let scheduler_url = self.scheduler_url.clone();
             let url = urls::scheduler_status(&scheduler_url);
             let req = self.client.lock().unwrap().get(url);
-            self.pool.spawn_fn(move || bincode_req(req))
+            let fut = self.pool.spawn_fn(move || bincode_req(req));
+            Box::new(futures_03::compat::Compat::new(fut)) as SFutureSend<SchedulerStatusResult>
         }
 
         fn do_submit_toolchain(
@@ -1281,14 +1282,15 @@ mod client {
                     let url = urls::server_submit_toolchain(job_alloc.server_id, job_alloc.job_id);
                     let req = self.client.lock().unwrap().post(url);
 
-                    self.pool
+                    let fut = self.pool
                         .spawn_fn(move || {
                             let toolchain_file_size = toolchain_file.metadata()?.len();
                             let body =
                                 reqwest::blocking::Body::sized(toolchain_file, toolchain_file_size);
                             let req = req.bearer_auth(job_alloc.auth.clone()).body(body);
                             bincode_req(req)
-                        })
+                        });
+                    Box::new(futures_03::compat::Compat::new(fut)) as SFutureSend<SubmitToolchainResult>
                 }
                 Ok(None) => f_err(anyhow!("couldn't find toolchain locally")),
                 Err(e) => f_err(e),
@@ -1304,7 +1306,7 @@ mod client {
             let url = urls::server_run_job(job_alloc.server_id, job_alloc.job_id);
             let mut req = self.client.lock().unwrap().post(url);
 
-            Box::new(self.pool.spawn_fn(move || {
+            let fut = self.pool.spawn_fn(move || {
                 let bincode = bincode::serialize(&RunJobHttpRequest { command, outputs })
                     .context("failed to serialize run job request")?;
                 let bincode_length = bincode.len();
@@ -1331,7 +1333,8 @@ mod client {
 
                 req = req.bearer_auth(job_alloc.auth.clone()).bytes(body);
                 bincode_req(req).map(|res| (res, path_transformer))
-            }))
+            });
+            Box::new(futures_03::compat::Compat::new(fut)) as SFutureSend<(RunJobResult, PathTransformer)>
         }
 
         fn put_toolchain(
@@ -1343,9 +1346,11 @@ mod client {
             let compiler_path = compiler_path.to_owned();
             let weak_key = weak_key.to_owned();
             let tc_cache = self.tc_cache.clone();
-            Box::new(self.pool.spawn_fn(move || {
+            let fut = self.pool.spawn_fn(move || {
                 tc_cache.put_toolchain(&compiler_path, &weak_key, toolchain_packager)
-            }))
+            });
+            Box::new(futures_03::compat::Compat::new(fut)) as SFutureSend<(Toolchain, Option<(String, PathBuf)>)>
+
         }
 
         fn rewrite_includes_only(&self) -> bool {

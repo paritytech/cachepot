@@ -93,23 +93,30 @@ fn run_server_process() -> Result<ServerStartup> {
         .env("RUST_BACKTRACE", "1")
         .spawn()?;
 
-    let startup = listener.incoming().into_future().map_err(|e| e.0);
-    let startup = startup.map_err(Error::from).and_then(|(socket, _rest)| {
-        let socket = socket.unwrap(); // incoming() never returns None
-        read_server_startup_status(socket)
-    });
+    let startup = listener.incoming().into_future()?;
+    let startup =
+        async move {
+            if let Ok((socket, _rest)) = startup.await.map_err(|e| e.0).map_err(Error::from) {
+                let socket = socket.unwrap(); // incoming() never returns None
+                read_server_startup_status(socket).await
+            }
+        };
 
     let timeout = Duration::from_millis(SERVER_STARTUP_TIMEOUT_MS.into());
-    let timeout = Timeout::new(startup, timeout).or_else(|err| {
-        if err.is_elapsed() {
-            Ok(ServerStartup::TimedOut)
-        } else if err.is_inner() {
-            Err(err.into_inner().unwrap())
-        } else {
-            Err(err.into_timer().unwrap().into())
-        }
-    });
-    runtime.block_on(timeout)
+
+    let fut = Box::pin(Timeout::new(startup, timeout))
+        .or_else(|err| {
+            if err.is_elapsed() {
+                Ok(ServerStartup::TimedOut)
+            } else if err.is_inner() {
+                Err(err.into_inner().unwrap())
+            } else {
+                Err(err.into_timer().unwrap().into())
+            }
+        });
+
+
+    runtime.block_on(fut)
 }
 
 #[cfg(not(windows))]

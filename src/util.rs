@@ -47,8 +47,8 @@ pub enum UtilError {
 pub trait SpawnExt: task::SpawnExt {
     async fn spawn_fn<F, T>(&self, f: F) -> Result<T>
     where
-        F: FnOnce() -> Result<T> + std::marker::Send + 'static,
-        T: std::marker::Send + 'static,
+        F: FnOnce() -> Result<T> + Send + 'static,
+        T: Send + 'static,
     {
         self.spawn_with_handle(async move { f() })
     }

@@ -807,20 +807,22 @@ pub enum CacheControl {
 ///
 /// Note that when the `TempDir` is dropped it will delete all of its contents
 /// including the path returned.
-pub fn write_temp_file(
+pub async fn write_temp_file(
     pool: &ThreadPool,
     path: &Path,
     contents: Vec<u8>,
-) -> SFuture<(TempDir, PathBuf)> {
+) -> Result<(TempDir, PathBuf)> {
     let path = path.to_owned();
-    pool.spawn_fn(move || -> Result<_> {
+    let res = pool.spawn_fn(move || -> Result<_> {
         let dir = tempfile::Builder::new().prefix("sccache").tempdir()?;
         let src = dir.path().join(path);
         let mut file = File::create(&src)?;
         file.write_all(&contents)?;
         Ok((dir, src))
     })
-    .fcontext("failed to write temporary file")
+    .await
+    .context("failed to write temporary file")?;
+    Ok(res)
 }
 
 /// If `executable` is a known compiler, return `Some(Box<Compiler>)`.
@@ -959,7 +961,6 @@ diab
 "
     .to_vec();
     let (tempdir, src) = write_temp_file(&pool, "testfile.c".as_ref(), test)
-
         .await?;
 
     let mut cmd = creator.clone().new_command_sync(&executable);
@@ -1901,16 +1902,16 @@ mod test_dist {
             })
         }
     }
-    #[async_trait::async_trait]
+    // #[async_trait::async_trait]
     impl dist::Client for ErrorAllocJobClient {
-        fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
+        fn do_alloc_job(&self, tc: Toolchain) -> SFuture<AllocJobResult> {
             assert_eq!(self.tc, tc);
             f_err(anyhow!("alloc job failure"))
         }
-        fn do_get_status(&self) -> Result<SchedulerStatusResult> {
+        fn do_get_status(&self) -> SFuture<SchedulerStatusResult> {
             unreachable!()
         }
-        fn do_submit_toolchain(&self, _: JobAlloc, _: Toolchain) -> Result<SubmitToolchainResult> {
+        fn do_submit_toolchain(&self, _: JobAlloc, _: Toolchain) -> SFuture<SubmitToolchainResult> {
             unreachable!()
         }
         fn do_run_job(
@@ -1919,7 +1920,7 @@ mod test_dist {
             _: CompileCommand,
             _: Vec<String>,
             _: Box<dyn pkg::InputsPackager>,
-        ) -> Result<(RunJobResult, PathTransformer)> {
+        ) -> SFuture<(RunJobResult, PathTransformer)> {
             unreachable!()
         }
         fn put_toolchain(
@@ -1927,7 +1928,7 @@ mod test_dist {
             _: &Path,
             _: &str,
             _: Box<dyn pkg::ToolchainPackager>,
-        ) -> Result<(Toolchain, Option<(String, PathBuf)>)> {
+        ) -> SFuture<(Toolchain, Option<(String, PathBuf)>)> {
             f_ok((self.tc.clone(), None))
         }
         fn rewrite_includes_only(&self) -> bool {
@@ -1954,7 +1955,7 @@ mod test_dist {
         }
     }
 
-    #[async_trait::async_trait]
+    // #[async_trait::async_trait]
     impl dist::Client for ErrorSubmitToolchainClient {
         fn do_alloc_job(&self, tc: Toolchain) -> SFuture<AllocJobResult> {
             assert!(!self.has_started.replace(true));
@@ -2020,9 +2021,9 @@ mod test_dist {
             })
         }
     }
-    #[async_trait::async_trait]
+    // #[async_trait::async_trait]
     impl dist::Client for ErrorRunJobClient {
-        fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
+        fn do_alloc_job(&self, tc: Toolchain) -> SFuture<AllocJobResult> {
             assert!(!self.has_started.replace(true));
             assert_eq!(self.tc, tc);
             f_ok(AllocJobResult::Success {
@@ -2034,14 +2035,14 @@ mod test_dist {
                 need_toolchain: true,
             })
         }
-        fn do_get_status(&self) -> Result<SchedulerStatusResult> {
+        fn do_get_status(&self) -> SFuture<SchedulerStatusResult> {
             unreachable!()
         }
         fn do_submit_toolchain(
             &self,
             job_alloc: JobAlloc,
             tc: Toolchain,
-        ) -> Result<SubmitToolchainResult> {
+        ) -> SFuture<SubmitToolchainResult> {
             assert_eq!(job_alloc.job_id, JobId(0));
             assert_eq!(self.tc, tc);
             f_ok(SubmitToolchainResult::Success)
@@ -2052,7 +2053,7 @@ mod test_dist {
             command: CompileCommand,
             _: Vec<String>,
             _: Box<dyn pkg::InputsPackager>,
-        ) -> Result<(RunJobResult, PathTransformer)> {
+        ) -> SFuture<(RunJobResult, PathTransformer)> {
             assert_eq!(job_alloc.job_id, JobId(0));
             assert_eq!(command.executable, "/overridden/compiler");
             f_err(anyhow!("run job failure"))
@@ -2062,7 +2063,7 @@ mod test_dist {
             _: &Path,
             _: &str,
             _: Box<dyn pkg::ToolchainPackager>,
-        ) -> Result<(Toolchain, Option<(String, PathBuf)>)> {
+        ) -> SFuture<(Toolchain, Option<(String, PathBuf)>)> {
             f_ok((
                 self.tc.clone(),
                 Some((
@@ -2099,7 +2100,7 @@ mod test_dist {
     }
 
     impl dist::Client for OneshotClient {
-        fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
+        fn do_alloc_job(&self, tc: Toolchain) -> SFuture<AllocJobResult> {
             assert!(!self.has_started.replace(true));
             assert_eq!(self.tc, tc);
 
@@ -2112,14 +2113,14 @@ mod test_dist {
                 need_toolchain: true,
             })
         }
-        fn do_get_status(&self) -> Result<SchedulerStatusResult> {
+        fn do_get_status(&self) -> SFuture<SchedulerStatusResult> {
             unreachable!()
         }
         fn do_submit_toolchain(
             &self,
             job_alloc: JobAlloc,
             tc: Toolchain,
-        ) -> Result<SubmitToolchainResult> {
+        ) -> SFuture<SubmitToolchainResult> {
             assert_eq!(job_alloc.job_id, JobId(0));
             assert_eq!(self.tc, tc);
 
@@ -2131,7 +2132,7 @@ mod test_dist {
             command: CompileCommand,
             outputs: Vec<String>,
             inputs_packager: Box<dyn pkg::InputsPackager>,
-        ) -> Result<(RunJobResult, PathTransformer)> {
+        ) -> SFuture<(RunJobResult, PathTransformer)> {
             assert_eq!(job_alloc.job_id, JobId(0));
             assert_eq!(command.executable, "/overridden/compiler");
 
@@ -2156,7 +2157,7 @@ mod test_dist {
             _: &Path,
             _: &str,
             _: Box<dyn pkg::ToolchainPackager>,
-        ) -> Result<(Toolchain, Option<(String, PathBuf)>)> {
+        ) -> SFuture<(Toolchain, Option<(String, PathBuf)>)> {
             f_ok((
                 self.tc.clone(),
                 Some((
