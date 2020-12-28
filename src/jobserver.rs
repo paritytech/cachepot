@@ -73,7 +73,7 @@ impl Client {
         helper.request_token();
         tx.unbounded_send(mytx).unwrap();
 
-        let acquired = rx.await.context("jobserver helper panicked")?
+        let acquired = myrx.await.context("jobserver helper panicked")?
             .context("failed to acquire jobserver token")?;
         Ok(Acquired { _token: Some(acquired) })
     }

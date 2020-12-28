@@ -56,18 +56,21 @@ fn get_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
-async fn read_server_startup_status<R: AsyncReadExt>(
+async fn read_server_startup_status<R: AsyncReadExt + Unpin>(
     mut server: R,
 ) -> Result<ServerStartup> {
     // This is an async equivalent of ServerConnection::read_one_response
     let mut bytes = [0u8; 4];
-    server.read_exact(&bytes[..]).await?;
+    server.read_exact(&mut bytes[..]).await?;
 
     let len = BigEndian::read_u32(&bytes);
-    let data = vec![0; len as usize];
-    server.read_exact( data.as_mut_slice()).await?;
+    let mut data = vec![0; len as usize];
+    server.read_exact(data.as_mut_slice()).await?;
 
-    let s = bincode::deserialize(&data)?;
+    let s = bincode::deserialize(&data)
+    .map_err(|e| {
+        anyhow!("bincode: {:?}", e).context("Failed to deserialized message")
+    });
     s
 }
 

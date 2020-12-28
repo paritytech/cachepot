@@ -532,15 +532,14 @@ impl<C: CommandCreatorSync> SccacheServer<C> {
             let service = service.clone();
             async move {
                 trace!("incoming connection");
-                tokio_compat::runtime::current_thread::TaskExecutor::current()
+                tokio_02::runtime::Runtime::new()
                     .spawn_local(Box::new(
                         Box::pin(
                             service.bind(socket)
                                 .map_err(|err| {
                                     error!("{}", err);
                                 })
-                        )
-                        .compat(),
+                        ),
                     ))
                     .expect("Spawning a task with compat executor always works");
                 Ok(())

@@ -74,7 +74,8 @@ impl Digest {
     where
         T: AsRef<Path>,
     {
-        Self::reader(path.as_ref().to_owned(), pool)
+        let content = Self::reader(path.as_ref().to_owned(), pool).await?;
+        Ok(content)
     }
 
     /// Calculate the BLAKE3 digest of the contents read from `reader`.
@@ -172,22 +173,36 @@ pub fn fmt_duration_as_secs(duration: &Duration) -> String {
 async fn wait_with_input_output<T>(mut child: T, input: Option<Vec<u8>>) -> Result<process::Output>
 where
     T: CommandChild + 'static,
+    <T as CommandChild>::O: Unpin,
+    <T as CommandChild>::I: Unpin,
 {
     use tokio_02::io::{BufReader, AsyncReadExt};
     use tokio_02::io::{BufWriter, AsyncWriteExt};
     use tokio_02::process::Command;
     let mut child = Box::pin(child);
-    let stdin = input.and_then(|i| {
+    let stdin = if let Some(input) = input {
         child
             .take_stdin()
-            .map(|mut stdin| Box::pin(async move { stdin.write_all(i).await.context("failed to write stdin")}))
-    });
+            .map(|mut stdin| Box::pin(async move { stdin.write_all(&input).await.context("failed to write stdin")}))
+    } else {
+        None
+    };
     let stdout = child
         .take_stdout()
-        .map(|mut io| Box::pin(async move { io.read_to_end(Vec::new()).await.context("failed to read stdout")}));
+        .map(|mut io| Box::pin(async move {
+            let mut buffer = Vec::new();
+            io.read_to_end(&mut buffer)
+            .await
+            .context("failed to read stdout")
+        }));
     let stderr = child
         .take_stderr()
-        .map(|mut io| Box::pin(async move { io.read_to_end(Vec::new()).await.context("failed to read stderr")}));
+        .map(|mut io| Box::pin(async move {
+            let mut buffer = Vec::new();
+            io.read_to_end(&mut buffer)
+            .await
+            .context("failed to read stderr")
+        }));
 
     // Finish writing stdin before waiting, because waiting drops stdin.
 
@@ -212,6 +227,8 @@ pub async fn run_input_output<C>(
 ) -> Result<process::Output>
 where
     C: RunCommand,
+    // <<C as RunCommand>::C as CommandChild>::O: Unpin,
+    <<C as RunCommand>::C as CommandChild>::E: Unpin,
 {
     let child = command
         .no_console()
@@ -222,10 +239,11 @@ where
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn().compat().await?;
+        .spawn()
+        .await?;
 
 
-    wait_with_input_output(child, input).compat().await
+    wait_with_input_output(child, input).await
         .and_then(|output| {
             if output.status.success() {
                 Ok(output)

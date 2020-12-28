@@ -426,14 +426,12 @@ where
     let mut path_transformer = dist::PathTransformer::default();
     let (compile_cmd, _dist_compile_cmd, cacheable) = compilation
         .generate_compile_commands(&mut path_transformer, true)
-        .compat()
         .await
         .context("Failed to generate compile commands")?;
 
     debug!("[{}]: Compiling locally", out_pretty);
     compile_cmd
         .execute(&creator)
-        .compat()
         .await
         .map(move |o| (cacheable, DistType::NoDist, o))
 }
@@ -971,9 +969,9 @@ diab
 
     cmd.arg("-E").arg(src);
     trace!("compiler {:?}", cmd);
-    let child = cmd.spawn().compat().await?;
+    let child = cmd.spawn().await?;
     let output = child
-        .wait_with_output().compat().await
+        .wait_with_output().await
         .context("failed to read child output")?;
 
     drop(tempdir);
