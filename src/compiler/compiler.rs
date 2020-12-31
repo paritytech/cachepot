@@ -387,7 +387,7 @@ where
                         object_file_pretty: out_pretty,
                         duration,
                     };
-                    tx.send(write_info)?;
+                    tx.send(write_info).except("Capacity depleted");
                     Ok(())
                 }) as std::pin::Pin<Box<dyn futures_03::Future<Output=Result<()>> + Send>>;
 

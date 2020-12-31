@@ -187,22 +187,32 @@ where
     } else {
         None
     };
-    let stdout = child
-        .take_stdout()
-        .map(|mut io| Box::pin(async move {
+    let stdout = child.take_stdout();
+    let stdout = Box::pin(async move {
+        if let Some(mut io) = stdout {
             let mut buffer = Vec::new();
             io.read_to_end(&mut buffer)
-            .await
-            .context("failed to read stdout")
-        }));
-    let stderr = child
-        .take_stderr()
-        .map(|mut io| Box::pin(async move {
-            let mut buffer = Vec::new();
-            io.read_to_end(&mut buffer)
-            .await
-            .context("failed to read stderr")
-        }));
+                .await
+                .context("failed to read stdout")?;
+            Ok(Some(buffer))
+        } else {
+            Ok(None)
+        }
+    });
+    let stderr = child.take_stderr();
+    let stderr = Box::pin(
+        async move {
+            if let Some(io) = stderr {
+                let mut buffer = Vec::new();
+                io.read_to_end(&mut buffer)
+                    .await
+                    .context("failed to read stderr")?;
+                Ok(Some(buffer))
+            } else {
+                Ok(None)
+            }
+        }
+    );
 
     // Finish writing stdin before waiting, because waiting drops stdin.
 
