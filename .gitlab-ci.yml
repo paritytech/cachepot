@@ -60,12 +60,17 @@ dist-test:
   <<:                              *docker-env
   stage:                           check
   variables:
-    DOCKER_DRIVER:                 overlay2
-    DOCKER_HOST:                   tcp://localhost:2375
-  image:                           docker:stable
+    A:                             b
+    # all variables are passed to the services
+  # ref https://docs.gitlab.com/ce/ci/docker/using_docker_images.html#available-settings-for-services
   services:
-    - docker:dind
+    - name:                        $CI_IMAGE # to change when we'll have our own release
+      alias:                       scheduler
+      # https://github.com/paritytech/sccache/pull/4/commits/678f77bb94d72ec1737f5ae80b7413000ff86cdb
+      command:                     ["sccache", "start-server"] # syntax: CMD ["executable","param1","param2"]
+    - name:                        $CI_IMAGE # to change when we'll have our own release
+      alias:                       server
+      command:                     ["sccache", "start-server"]
   script:
-    - cargo test --features=dist-tests,dist-client,dist-server
-  tags:
-    - kubernetes-parity-build
+    - sccache -s
+    # - cargo test --features=dist-tests,dist-client,dist-server
