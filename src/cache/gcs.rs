@@ -572,12 +572,15 @@ impl Storage for GCSCache {
         let data = entry.finish()?;
 
         let bucket = self.bucket.clone();
-        let _response = bucket
+        let response = bucket
             .put(&key, data, &self.credential_provider)
             .await
-            .context("failed to put cache entry in GCS")?;
+            .context("failed to put cache entry in GCS");
 
-        Ok(start.elapsed())
+        match(response) {
+            Ok(()) => Ok(start.elapsed()),
+            Err(e) => Err(e),
+        }
     }
 
     fn location(&self) -> String {
