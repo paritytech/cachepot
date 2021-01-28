@@ -777,18 +777,22 @@ pub fn get_token_oauth2_code_grant_pkce(
     let shutdown_signal = shutdown_rx;
 
     let mut runtime = Runtime::new()?;
+    //let auth_srv_shutdown_result = 
     runtime
         .block_on(server.with_graceful_shutdown(async move {
             let _ = shutdown_signal.await;
-        } )).unwrap()
-        // TODO(drahnr): remove below when not needed anymore
-        // .map_err(|e| {
-        //     warn!(
-        //         "Something went wrong while waiting for auth server shutdown: {}",
-        //         e
-        //     )
-        // })?
-        ;
+        } )).expect("Something went wrong while waiting for auth server shutdown.");
+    //.map_err(|e| {
+    //        warn!(
+    //            "Something went wrong while waiting for auth server shutdown: {}",
+    //            e
+    //        );
+    //        StdError{"Error"}
+    //    });
+    //match auth_srv_shutdown_result {
+    //    Ok(_) => Ok(()),
+    //    Err(_) => StdError{"ERROR"},
+    //}?;
 
     info!("Server finished, using code to request token");
     let code = code_rx
