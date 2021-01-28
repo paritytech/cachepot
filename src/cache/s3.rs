@@ -22,7 +22,7 @@ use rusoto_core::{
     credential::{AutoRefreshingProvider, ChainProvider, ProfileProvider},
     Region,
 };
-use rusoto_s3::{Bucket, GetObjectOutput, GetObjectRequest, PutObjectRequest, S3Client, S3};
+use rusoto_s3::{GetObjectOutput, GetObjectRequest, PutObjectRequest, S3Client, S3};
 use std::io;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -64,10 +64,6 @@ impl S3Cache {
         let provider =
             AutoRefreshingProvider::new(ChainProvider::with_profile_provider(profile_provider))?;
         let bucket_name = bucket.to_owned();
-        let _bucket = std::sync::Arc::new(Bucket {
-            creation_date: None,
-            name: Some(bucket_name.clone()),
-        });
         let region = match endpoint {
             Some(endpoint) => Region::Custom {
                 name: region
