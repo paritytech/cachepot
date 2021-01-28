@@ -224,7 +224,8 @@ where
         .envs(ref_env(env_vars))
         .current_dir(cwd);
     trace!("[{}]: get dep-info: {:?}", crate_name, cmd);
-    let _dep_info = run_input_output(cmd, None).await?;
+    // Output of command is in file under dep_file, so we ignore stdout&stderr
+    let _stdouterr = run_input_output(cmd, None).await?;
     // Parse the dep-info file, then hash the contents of those files.
     let pool = pool.clone();
     let cwd = cwd.to_owned();
