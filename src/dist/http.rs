@@ -1249,7 +1249,7 @@ mod client {
                         &mut server_certs.lock().unwrap(),
                         res.cert_digest,
                         res.cert_pem,
-                    );
+                    ).unwrap();
 
                     alloc_job_res
                 }

@@ -748,7 +748,7 @@ where
                 }
                 Request::ZeroStats => {
                     debug!("handle_client: zero_stats");
-                    me.zero_stats();
+                    me.zero_stats().await;
                     me
                         .get_info()
                         .await
@@ -1297,7 +1297,7 @@ where
             Ok::<_, Error>(())
         };
 
-        self.pool.spawn(Box::pin(async move { task.await; } )).unwrap();
+        self.pool.spawn(Box::pin(async move { task.await.unwrap(); } )).unwrap();
     }
 }
 

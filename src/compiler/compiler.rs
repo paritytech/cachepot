@@ -382,7 +382,7 @@ where
                             object_file_pretty: out_pretty2,
                             duration,
                         };
-                        tx.send(write_info);
+                        tx.send(write_info).expect("error, when sending information regarding object to cache."); //TODO: check if error message reflect actual intent
                         Ok::<_,anyhow::Error>(())
                     };
                     let _ = pool.spawn_with_handle(Box::pin(fut));
@@ -703,6 +703,7 @@ pub enum MissType {
 }
 
 /// Information about a successful cache write.
+#[derive(Debug)]
 pub struct CacheWriteInfo {
     pub object_file_pretty: String,
     pub duration: Duration,

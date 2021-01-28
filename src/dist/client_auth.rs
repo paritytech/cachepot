@@ -780,7 +780,8 @@ pub fn get_token_oauth2_code_grant_pkce(
     runtime
         .block_on(server.with_graceful_shutdown(async move {
             let _ = shutdown_signal.await;
-        } ))
+        } )).unwrap()
+        // TODO(drahnr): remove below when not needed anymore
         // .map_err(|e| {
         //     warn!(
         //         "Something went wrong while waiting for auth server shutdown: {}",
