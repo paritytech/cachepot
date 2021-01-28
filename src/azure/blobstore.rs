@@ -16,7 +16,6 @@
 
 use crate::azure::credentials::*;
 use bytes::Buf;
-use futures_03::{Future, Stream};
 use hmac::{Hmac, Mac, NewMac};
 use hyperx::header;
 use md5::{Digest, Md5};
