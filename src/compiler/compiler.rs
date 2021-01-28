@@ -14,7 +14,7 @@
 
 #![allow(clippy::complexity)]
 
-use crate::cache::{Cache, CacheWrite, DecompressionFailure, Storage, ArcDynStorage, };
+use crate::cache::{Cache, CacheWrite, DecompressionFailure, ArcDynStorage, };
 use crate::compiler::c::{CCompiler, CCompilerKind};
 use crate::compiler::clang::Clang;
 use crate::compiler::diab::Diab;
@@ -29,12 +29,8 @@ use crate::dist::pkg;
 use crate::mock_command::{exit_status, CommandChild, CommandCreatorSync, RunCommand};
 use crate::util::{fmt_duration_as_secs, ref_env, run_input_output, SpawnExt};
 use filetime::FileTime;
-use futures_03::Future;
 use futures_03::channel::oneshot;
 use futures_03::executor::ThreadPool;
-use futures_03::prelude::*;
-use futures_03::task::SpawnExt as SpawnExt_03;
-use tokio_02::time::Timeout;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -46,7 +42,6 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
 use std::str;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
@@ -308,7 +303,7 @@ where
                 error!("[{}]: Cache read error: {:?}", out_pretty, err);
                 Ok(CacheLookupResult::Miss(MissType::CacheReadError))
             }
-            Err(err) => {
+            Err(_err) => {
                 debug!(
                     "[{}]: Cache timed out {}",
                     out_pretty,
@@ -471,7 +466,7 @@ where
     };
 
     debug!("[{}]: Attempting distributed compilation", out_pretty);
-    let compile_out_pretty = out_pretty.clone();
+    let _compile_out_pretty = out_pretty.clone(); // TODO: double check if we want to call two times in two lines in a row like this
     let compile_out_pretty = out_pretty.clone();
     let compile_out_pretty3 = out_pretty.clone();
     let compile_out_pretty4 = out_pretty;

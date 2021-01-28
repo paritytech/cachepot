@@ -1,19 +1,15 @@
-use futures_03::prelude::*;
 use futures_03::channel::oneshot;
 use futures_03::task as task_03;
 use http::StatusCode;
-use hyper::body::HttpBody;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::Service;
 use hyper::{Body, Request, Response, Server};
 use hyperx::header::{ContentLength, ContentType};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::error;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
-use std::marker::PhantomData;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::pin::Pin;
 use std::result;
@@ -126,7 +122,6 @@ mod code_grant_pkce {
         html_response, json_response, query_pairs, MIN_TOKEN_VALIDITY, MIN_TOKEN_VALIDITY_WARNING,
         REDIRECT_WITH_AUTH_JSON,
     };
-    use futures_03::future::{self, Future};
     use futures_03::channel::oneshot;
     use hyper::{Body, Method, Request, Response, StatusCode};
     use rand::RngCore;
@@ -287,7 +282,7 @@ mod code_grant_pkce {
 
         fn poll_ready(
             &mut self,
-            cx: &mut task_03::Context<'_>,
+            _cx: &mut task_03::Context<'_>,
         ) -> task_03::Poll<result::Result<(), Self::Error>> {
             task_03::Poll::Ready(Ok(()))
         }
@@ -318,7 +313,7 @@ mod code_grant_pkce {
             redirect_uri,
         };
         let client = reqwest::blocking::Client::new();
-        let mut res = client.post(token_url).json(&token_request).send()?;
+        let res = client.post(token_url).json(&token_request).send()?;
         if !res.status().is_success() {
             bail!(
                 "Sending code to {} failed, HTTP error: {}",
@@ -351,7 +346,6 @@ mod implicit {
         REDIRECT_WITH_AUTH_JSON,
     };
     use futures_03::channel::oneshot;
-    use futures_03::future;
     use hyper::{Body, Method, Request, Response, StatusCode};
     use std::collections::HashMap;
     use std::sync::mpsc;
@@ -510,7 +504,7 @@ mod implicit {
 
         fn poll_ready(
             &mut self,
-            cx: &mut task_03::Context<'_>,
+            _cx: &mut task_03::Context<'_>,
         ) -> task_03::Poll<result::Result<(), Self::Error>> {
             task_03::Poll::Ready(Ok(()))
         }
@@ -740,7 +734,7 @@ pub fn get_token_oauth2_code_grant_pkce(
 ) -> Result<String> {
     use code_grant_pkce::CodeGrant;
 
-    let spawner = ServiceSpawner::<CodeGrant, _>::new(move |stream: &AddrStream| {
+    let spawner = ServiceSpawner::<CodeGrant, _>::new(move |_stream: &AddrStream| {
         let f = Box::pin(async move { Ok(CodeGrant) });
         f as Pin<
             Box<
@@ -807,7 +801,7 @@ pub fn get_token_oauth2_code_grant_pkce(
 pub fn get_token_oauth2_implicit(client_id: &str, mut auth_url: Url) -> Result<String> {
     use implicit::Implicit;
 
-    let spawner = ServiceSpawner::<Implicit, _>::new(move |stream: &AddrStream| {
+    let spawner = ServiceSpawner::<Implicit, _>::new(move |_stream: &AddrStream| {
         let f = Box::pin(async move { Ok(Implicit) });
         f as Pin<
             Box<

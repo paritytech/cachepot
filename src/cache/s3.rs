@@ -15,9 +15,6 @@
 use crate::cache::{Cache, CacheRead, CacheWrite, Storage};
 use crate::errors::*;
 use directories::UserDirs;
-use futures_03::future::{self, Future};
-use futures_03::future::TryFutureExt as _;
-use hyper::Client;
 use hyper_rustls;
 use hyperx::header::CacheDirective;
 use rusoto_core::{
@@ -67,7 +64,7 @@ impl S3Cache {
         let provider =
             AutoRefreshingProvider::new(ChainProvider::with_profile_provider(profile_provider))?;
         let bucket_name = bucket.to_owned();
-        let bucket = std::sync::Arc::new(Bucket {
+        let _bucket = std::sync::Arc::new(Bucket {
             creation_date: None,
             name: Some(bucket_name.clone()),
         });
