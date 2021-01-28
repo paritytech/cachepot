@@ -1265,7 +1265,7 @@ where
                 }
             };
             let send = Box::pin(
-                tx.send(Ok(Response::CompileFinished(res))).map_err(|_e| anyhow!("send on finish failed") )
+                tx.send(Ok(Response::CompileFinished(res))).map_err(|e| anyhow!("send on finish failed").context(e) )
             );
 
             let me = me.clone();
