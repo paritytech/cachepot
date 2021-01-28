@@ -418,7 +418,7 @@ mod http_extension {
     }
 
     impl RequestExt for http::request::Builder {
-        fn set_header<H>(mut self, header: H) -> Self
+        fn set_header<H>(self, header: H) -> Self
         where
             H: hyperx::header::Header + fmt::Display,
         {
