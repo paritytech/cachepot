@@ -777,7 +777,8 @@ pub fn get_token_oauth2_code_grant_pkce(
     let shutdown_signal = shutdown_rx;
 
     let mut runtime = Runtime::new()?;
-    //let auth_srv_shutdown_result = 
+    // if the wait of the shutdown terminated unexpectedly, we assume it triggered and continue shutdown
+    let _ = 
     runtime
         .block_on(server.with_graceful_shutdown(async move {
             let _ = shutdown_signal.await;
