@@ -190,7 +190,7 @@ where
     // Finish writing stdin before waiting, because waiting drops stdin.
 
     if let Some(stdin) = stdin {
-        stdin.await.unwrap();
+        let _ = stdin.await;
     }
     let status = child.wait().await.context("failed to wait for child")?;
     let (stdout, stderr) = futures_03::join!(stdout, stderr);
