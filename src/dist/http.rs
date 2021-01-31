@@ -1249,7 +1249,7 @@ mod client {
                         &mut server_certs.lock().unwrap(),
                         res.cert_digest,
                         res.cert_pem,
-                    ).unwrap();
+                    ).context("Failed to update certificate").unwrap_or_else(|e| { warn!("Failed to update certificate: {:?}", e) });
 
                     alloc_job_res
                 }
