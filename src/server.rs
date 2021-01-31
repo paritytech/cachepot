@@ -1297,7 +1297,7 @@ where
             Ok::<_, Error>(())
         };
 
-        self.pool.spawn(Box::pin(async move { task.await.unwrap(); } )).unwrap();
+        self.pool.spawn(Box::pin(async move { task.await.unwrap_or_else(|e| { warn!("Failed to execut task: {:?}", e) }); } )).expect("Spawning on the worker pool never fails. qed");
     }
 }
 
