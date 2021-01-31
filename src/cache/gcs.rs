@@ -577,10 +577,7 @@ impl Storage for GCSCache {
             .await
             .context("failed to put cache entry in GCS");
 
-        match(response) {
-            Ok(()) => Ok(start.elapsed()),
-            Err(e) => Err(e),
-        }
+        response.map(move |_| start.elapsed())
     }
 
     fn location(&self) -> String {
