@@ -471,7 +471,8 @@ impl<C: CommandCreatorSync> SccacheServer<C> {
         // connections.
         let (tx, rx) = mpsc::channel(1);
         let (wait, info) = WaitUntilZero::new();
-        let service = SccacheService::new(dist_client, storage, &client, pool, tx, info);
+        let rt_handle = runtime.handle().clone();
+        let service = SccacheService::new(dist_client, storage, &client, pool, rt_handle, tx, info);
 
         Ok(SccacheServer {
             runtime,
@@ -675,6 +676,9 @@ struct SccacheService<C> where C: Send {
     /// Thread pool to execute work in
     pool: ThreadPool,
 
+    /// Task pool for blocking and non-blocking tasks (supersedes `pool`)
+    rt: tokio_02::runtime::Handle,
+
     /// An object for creating commands.
     ///
     /// This is mostly useful for unit testing, where we
@@ -792,6 +796,7 @@ where
         storage: ArcDynStorage,
         client: &Client,
         pool: ThreadPool,
+        rt: tokio_02::runtime::Handle,
         tx: mpsc::Sender<ServerMessage>,
         info: ActiveInfo,
     ) -> SccacheService<C> {
@@ -802,6 +807,7 @@ where
             compilers: Arc::new(RwLock::new(HashMap::new())),
             compiler_proxies: Arc::new(RwLock::new(HashMap::new())),
             pool,
+            rt,
             creator: C::new(client),
             tx,
             info,
@@ -1298,7 +1304,7 @@ where
             Ok::<_, Error>(())
         };
 
-        self.pool.spawn(Box::pin(async move { task.await.unwrap_or_else(|e| { warn!("Failed to execut task: {:?}", e) }); } )).expect("Spawning on the worker pool never fails. qed");
+        self.rt.spawn(Box::pin(async move { task.await.unwrap_or_else(|e| { warn!("Failed to execute task: {:?}", e) }); } ));
     }
 }
 
