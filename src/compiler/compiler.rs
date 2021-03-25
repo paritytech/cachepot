@@ -242,17 +242,9 @@ where
             // outer result is timeout, inner result is operation result
             Ok(Ok(Cache::Recache))
         } else {
-            use futures_03::future;
-            const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
-
             let fetch = storage.get(&key);
-            let timeout = futures_timer::Delay::new(FETCH_TIMEOUT);
-            // FIXME: Prefer using Tokio timer if we switch to Tokio-based
-            // threadpool for task execution
-            match future::select(fetch, timeout).await {
-                future::Either::Left((cache, _timer)) => Ok(cache),
-                future::Either::Right(((), _)) => Err(anyhow!("Timeout {:?}", FETCH_TIMEOUT)),
-            }
+
+            tokio_02::time::timeout(Duration::from_secs(60), fetch).await
         };
 
         // Set a maximum time limit for the cache to respond before we forge
