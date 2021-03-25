@@ -15,7 +15,6 @@
 use crate::mock_command::{CommandChild, RunCommand};
 use blake3::Hasher as blake3_Hasher;
 use byteorder::{BigEndian, ByteOrder};
-use futures_03::executor::ThreadPool;
 pub(crate) use futures_03::task::SpawnExt;
 use serde::Serialize;
 use std::ffi::{OsStr, OsString};

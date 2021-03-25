@@ -34,8 +34,6 @@ use crate::util;
 use anyhow::Context as _;
 use bytes::{buf::ext::BufMutExt, Bytes, BytesMut};
 use filetime::FileTime;
-use futures_03::executor::ThreadPool;
-use futures_03::task::SpawnExt;
 use futures_03::{channel::mpsc, future, prelude::*, stream};
 use futures_03::future::FutureExt;
 use futures_locks::RwLock;

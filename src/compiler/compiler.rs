@@ -30,7 +30,6 @@ use crate::mock_command::{exit_status, CommandChild, CommandCreatorSync, RunComm
 use crate::util::{fmt_duration_as_secs, ref_env, run_input_output, SpawnExt};
 use filetime::FileTime;
 use futures_03::{Future, channel::oneshot};
-use futures_03::executor::ThreadPool;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -1138,7 +1137,6 @@ mod test {
     use crate::test::mock_storage::MockStorage;
     use crate::test::utils::*;
     use futures_03::future::{self, Future};
-    use futures_03::executor::ThreadPool;
     use std::fs::{self, File};
     use std::io::Write;
     use std::sync::Arc;
