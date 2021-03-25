@@ -1346,7 +1346,7 @@ mod client {
             let pool = self.pool.clone();
 
             pool.spawn_with_handle(async move {
-                    tc_cache.put_toolchain(compiler_path, weak_key, toolchain_packager).await
+                    tc_cache.put_toolchain(compiler_path, weak_key, toolchain_packager)
                 })?
                 .await
         }
