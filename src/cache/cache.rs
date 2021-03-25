@@ -152,11 +152,11 @@ impl CacheRead {
         bytes
     }
 
-    pub async fn extract_objects<T>(mut self, objects: T, pool: &ThreadPool) -> Result<()>
+    pub async fn extract_objects<T>(mut self, objects: T, pool: &tokio_02::runtime::Handle) -> Result<()>
     where
         T: IntoIterator<Item = (String, PathBuf)> + Send + Sync + 'static,
     {
-        pool.spawn_with_handle(async move {
+        pool.spawn_blocking(move || {
             for (key, path) in objects {
                 let dir = match path.parent() {
                     Some(d) => d,
@@ -173,8 +173,8 @@ impl CacheRead {
                 }
             }
             Ok(())
-        })?
-        .await
+        })
+        .await?
     }
 }
 
@@ -192,11 +192,11 @@ impl CacheWrite {
     }
 
     /// Create a new cache entry populated with the contents of `objects`.
-    pub async fn from_objects<T>(objects: T, pool: &ThreadPool) -> Result<CacheWrite>
+    pub async fn from_objects<T>(objects: T, pool: &tokio_02::runtime::Handle) -> Result<CacheWrite>
     where
         T: IntoIterator<Item = (String, PathBuf)> + Send + Sync + 'static,
     {
-        let handle = pool.spawn_with_handle(async move {
+        pool.spawn_blocking(move || {
             let mut entry = CacheWrite::new();
             for (key, path) in objects {
                 let mut f = fs::File::open(&path)?;
@@ -206,8 +206,8 @@ impl CacheWrite {
                     .with_context(|| format!("failed to put object `{:?}` in cache entry", path))?;
             }
             Ok(entry)
-        })?;
-        handle.await
+        })
+        .await?
     }
 
     /// Add an object containing the contents of `from` to this cache entry at `name`.

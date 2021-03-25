@@ -226,6 +226,14 @@ impl TestFixture {
     }
 }
 
+pub fn single_threaded_runtime() -> tokio_02::runtime::Runtime {
+    tokio_02::runtime::Builder::new()
+        .enable_all()
+        .basic_scheduler()
+        .core_threads(1)
+        .build()
+        .unwrap()
+}
 
 /// An add on trait, to allow calling `.wait()` for `futures_03::Future`
 /// as it was possible for `futures` at `0.1`.

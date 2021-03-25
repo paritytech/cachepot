@@ -50,7 +50,7 @@ impl Digest {
 
     /// Calculate the BLAKE3 digest of the contents of `path`, running
     /// the actual hash computation on a background thread in `pool`.
-    pub async fn file<T>(path: T, pool: &ThreadPool) -> Result<String>
+    pub async fn file<T>(path: T, pool: &tokio_02::runtime::Handle) -> Result<String>
     where
         T: AsRef<Path>,
     {
@@ -75,13 +75,13 @@ impl Digest {
 
     /// Calculate the BLAKE3 digest of the contents of `path`, running
     /// the actual hash computation on a background thread in `pool`.
-    pub async fn reader(path: PathBuf, pool: &ThreadPool) -> Result<String> {
-        pool.spawn_with_handle(async move {
+    pub async fn reader(path: PathBuf, pool: &tokio_02::runtime::Handle) -> Result<String> {
+        pool.spawn_blocking(move || {
             let reader = File::open(&path)
                 .with_context(|| format!("Failed to open file for hashing: {:?}", path))?;
             Digest::reader_sync(reader)
-        })?
-        .await
+        })
+        .await?
     }
 
     pub fn update(&mut self, bytes: &[u8]) {
@@ -117,7 +117,7 @@ pub fn hex(bytes: &[u8]) -> String {
 
 /// Calculate the digest of each file in `files` on background threads in
 /// `pool`.
-pub async fn hash_all(files: &[PathBuf], pool: &ThreadPool) -> Result<Vec<String>> {
+pub async fn hash_all(files: &[PathBuf], pool: &tokio_02::runtime::Handle) -> Result<Vec<String>> {
     let start = time::Instant::now();
     let count = files.len();
     let iter = files
