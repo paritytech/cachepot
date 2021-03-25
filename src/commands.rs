@@ -686,6 +686,7 @@ pub fn run_command(cmd: Command) -> Result<i32> {
             let out_file = File::create(out)?;
             let cwd = env::current_dir().expect("A current working dir should exist");
 
+            let pool = runtime.handle().clone();
             runtime.block_on(async move {
                 let compiler =
                     compiler::get_compiler_info(creator, &executable, &cwd, &env, &pool, None)

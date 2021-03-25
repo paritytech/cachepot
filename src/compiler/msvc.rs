@@ -109,7 +109,7 @@ pub async fn detect_showincludes_prefix<T>(
     exe: &OsStr,
     is_clang: bool,
     env: Vec<(OsString, OsString)>,
-    pool: &ThreadPool,
+    pool: &tokio_02::runtime::Handle,
 ) -> Result<String>
 where
     T: CommandCreatorSync,
@@ -123,12 +123,12 @@ where
 
     let header = tempdir.path().join("test.h");
     let tempdir = pool
-        .spawn_with_handle(async move {
+        .spawn_blocking(move || {
             let mut file = File::create(&header)?;
             file.write_all(b"/* empty */\n")?;
             Ok::<_, std::io::Error>(tempdir)
-        })?
-        .await
+        })
+        .await?
         .context("Failed to write temporary file")?;
 
     let mut cmd = creator.new_command_sync(&exe);
@@ -876,7 +876,8 @@ mod test {
     fn test_detect_showincludes_prefix() {
         let _ = env_logger::Builder::new().is_test(true).try_init();
         let creator = new_creator();
-        let pool = ThreadPool::sized(1);
+        let runtime = single_threaded_runtime();
+        let pool = runtime.handle().clone();
         let f = TestFixture::new();
         let srcfile = f.touch("test.h").unwrap();
         let mut s = srcfile.to_str().unwrap();

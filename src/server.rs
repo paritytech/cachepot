@@ -1021,7 +1021,7 @@ where
                         &path1,
                         &cwd,
                         env.as_slice(),
-                        &me.pool,
+                        &me.rt,
                         dist_info.clone().map(|(p, _)| p),
                     )
                     .await;
@@ -1152,7 +1152,7 @@ where
         let dist_client = self.dist_client.get_client();
         let creator = self.creator.clone();
         let storage = self.storage.clone();
-        let pool = self.pool.clone();
+        let pool = self.rt.clone();
         let task = async move {
             let result = match dist_client {
                 Ok(client) => {
