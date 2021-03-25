@@ -26,7 +26,6 @@ use crate::mock_command::{CommandCreatorSync, RunCommand};
 use crate::util::{fmt_duration_as_secs, hash_all, run_input_output, Digest};
 use crate::util::{ref_env, HashToDigest, OsStrExt, SpawnExt};
 use filetime::FileTime;
-use futures_03::executor::ThreadPool;
 use log::Level::Trace;
 #[cfg(feature = "dist-client")]
 use lru_disk_cache::{LruCache, Meter};
@@ -2958,7 +2957,6 @@ c:/foo/bar.rs:
         let creator = new_creator();
         mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
         mock_file_names(&creator, &["foo.rlib", "foo.a"]);
-        let pool = ThreadPool::sized(1);
         let runtime = single_threaded_runtime();
         let pool = runtime.handle().clone();
         let res = hasher

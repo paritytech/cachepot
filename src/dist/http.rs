@@ -1090,8 +1090,6 @@ mod client {
     use byteorder::{BigEndian, WriteBytesExt};
     use flate2::write::ZlibEncoder as ZlibWriteEncoder;
     use flate2::Compression;
-    use futures_03::executor::ThreadPool;
-    use futures_03::task::SpawnExt as SpawnExt_03;
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};

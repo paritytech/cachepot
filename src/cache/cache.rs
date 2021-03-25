@@ -25,8 +25,6 @@ use crate::cache::redis::RedisCache;
 use crate::cache::s3::S3Cache;
 use crate::config::{self, CacheType, Config};
 
-use futures_03::executor::ThreadPool;
-use futures_03::task::SpawnExt as SpawnExt_03;
 use std::fmt;
 use std::fs;
 #[cfg(feature = "gcs")]
