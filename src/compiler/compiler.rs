@@ -1339,7 +1339,7 @@ LLVM version: 6.0",
         let f = TestFixture::new();
         let pool = ThreadPool::sized(1);
         let mut runtime = Runtime::new().unwrap();
-        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, &pool);
+        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, runtime.handle());
         let storage: ArcDynStorage = Arc::new(storage);
         // Pretend to be GCC.
         next_command(&creator, Ok(MockChild::new(exit_status(0), "gcc", "")));
@@ -1445,7 +1445,7 @@ LLVM version: 6.0",
         let f = TestFixture::new();
         let pool = ThreadPool::sized(1);
         let mut runtime = Runtime::new().unwrap();
-        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, &pool);
+        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, runtime.handle());
         let storage: ArcDynStorage = Arc::new(storage);
         // Pretend to be GCC.
         next_command(&creator, Ok(MockChild::new(exit_status(0), "gcc", "")));
@@ -1626,7 +1626,7 @@ LLVM version: 6.0",
         let f = TestFixture::new();
         let pool = ThreadPool::sized(1);
         let mut runtime = Runtime::new().unwrap();
-        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, &pool);
+        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, runtime.handle());
         let storage: ArcDynStorage = Arc::new(storage);
         // Pretend to be GCC.
         next_command(&creator, Ok(MockChild::new(exit_status(0), "gcc", "")));
@@ -1734,7 +1734,7 @@ LLVM version: 6.0",
         let f = TestFixture::new();
         let pool = ThreadPool::sized(1);
         let mut runtime = Runtime::new().unwrap();
-        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, &pool);
+        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, runtime.handle());
         let storage: ArcDynStorage = Arc::new(storage);
         // Pretend to be GCC.  Also inject a fake object file that the subsequent
         // preprocessor failure should remove.
@@ -1804,13 +1804,14 @@ LLVM version: 6.0",
         let creator = new_creator();
         let f = TestFixture::new();
         let pool = ThreadPool::sized(1);
+        let runtime = Runtime::new().unwrap();
         let dist_clients = vec![
             test_dist::ErrorPutToolchainClient::new(),
             test_dist::ErrorAllocJobClient::new(),
             test_dist::ErrorSubmitToolchainClient::new(),
             test_dist::ErrorRunJobClient::new(),
         ];
-        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, &pool);
+        let storage = DiskCache::new(&f.tempdir.path().join("cache"), u64::MAX, runtime.handle());
         let storage: ArcDynStorage = Arc::new(storage);
         // Pretend to be GCC.
         next_command(&creator, Ok(MockChild::new(exit_status(0), "gcc", "")));

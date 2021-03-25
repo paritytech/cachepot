@@ -406,12 +406,16 @@ impl DistClientContainer {
 pub fn start_server(config: &Config, port: u16) -> Result<()> {
     info!("start_server: port: {}", port);
     let client = unsafe { Client::new() };
-    let runtime = Runtime::new()?;
+    let runtime = tokio_02::runtime::Builder::new()
+        .enable_all()
+        .threaded_scheduler()
+        .core_threads(std::cmp::max(20, 2 * num_cpus::get()))
+        .build()?;
     let pool = ThreadPool::builder()
         .pool_size(std::cmp::max(20, 2 * num_cpus::get()))
         .create()?;
     let dist_client = DistClientContainer::new(config, &pool);
-    let storage = storage_from_config(config, &pool);
+    let storage = storage_from_config(config, runtime.handle());
     let res = SccacheServer::<ProcessCommandCreator>::new(
         port,
         pool,

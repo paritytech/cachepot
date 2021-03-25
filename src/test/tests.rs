@@ -76,11 +76,11 @@ where
     let (tx, rx) = mpsc::channel();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handle = thread::spawn(move || {
+        let runtime = Runtime::new().unwrap();
         let pool = ThreadPool::sized(1);
         let dist_client = DistClientContainer::new_disabled();
-        let storage = Arc::new(DiskCache::new(&cache_dir, cache_size, &pool));
+        let storage = Arc::new(DiskCache::new(&cache_dir, cache_size, runtime.handle()));
 
-        let runtime = Runtime::new().unwrap();
         let client = unsafe { Client::new() };
         let srv = SccacheServer::new(0, pool, runtime, client, dist_client, storage).unwrap();
         let mut srv: SccacheServer<Arc<Mutex<MockCommandCreator>>> = srv;
