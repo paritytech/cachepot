@@ -47,6 +47,7 @@ fn test_rust_cargo_cmd(cmd: &str) {
     use assert_cmd::prelude::*;
     use predicates::prelude::*;
     use std::env;
+    use std::ffi::OsStr;
     use std::fs;
     use std::path::Path;
     use std::process::{Command, Stdio};
@@ -104,8 +105,11 @@ fn test_rust_cargo_cmd(cmd: &str) {
         .success();
     // `cargo clean` first, just to be sure there's no leftover build objects.
     let envs = vec![
-        ("RUSTC_WRAPPER", &sccache),
-        ("CARGO_TARGET_DIR", &cargo_dir),
+        ("RUSTC_WRAPPER", sccache.as_ref()),
+        ("CARGO_TARGET_DIR", cargo_dir.as_ref()),
+        // Explicitly disable incremental compilation because sccache is unable
+        // to cache it at the time of writing.
+        ("CARGO_INCREMENTAL", OsStr::new("0")),
     ];
     Command::new(&cargo)
         .args(&["clean"])
@@ -136,12 +140,11 @@ fn test_rust_cargo_cmd(cmd: &str) {
         .stderr(predicates::str::contains("\x1b[").from_utf8())
         .success();
     // Now get the stats and ensure that we had a cache hit for the second build.
-    // Ideally we'd check the stats more usefully here--the test crate has one dependency (itoa)
-    // so there are two separate compilations, but cargo will build the test crate with
-    // incremental compilation enabled, so sccache will not cache it.
+    // The test crate has one dependency (itoa) so there are two separate
+    // compilations.
     trace!("sccache --show-stats");
     get_stats(|info: sccache::server::ServerInfo| {
-        assert_eq!(dbg!(dbg!(info.stats).cache_hits).get("Rust"), Some(&1));
+        assert_eq!(dbg!(dbg!(info.stats).cache_hits).get("Rust"), Some(&2));
     });
 
     stop();
