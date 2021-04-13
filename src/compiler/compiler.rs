@@ -915,10 +915,7 @@ where
                     Ok(Some(proxy)) => {
                         trace!("Found rustup proxy executable");
                         // take the pathbuf for rustc as resolved by the proxy
-                        match proxy
-                            .resolve_proxied_executable(creator1, cwd, &env)
-                            .await
-                        {
+                        match proxy.resolve_proxied_executable(creator1, cwd, &env).await {
                             Ok((resolved_path, _time)) => {
                                 trace!("Resolved path with rustup proxy {:?}", &resolved_path);
                                 Ok((Some(proxy), resolved_path))
@@ -940,13 +937,14 @@ where
                 }
             });
 
-            let (proxy, resolved_rustc) = res.await
-                .map(|(proxy,resolved_compiler_executable)| {
+            let (proxy, resolved_rustc) = res
+                .await
+                .map(|(proxy, resolved_compiler_executable)| {
                     (
-                        proxy.map(Box::new).map(|x : Box<RustupProxy>| {
-                            x as Box<dyn CompilerProxy<T>>
-                        }),
-                        resolved_compiler_executable
+                        proxy
+                            .map(Box::new)
+                            .map(|x: Box<RustupProxy>| x as Box<dyn CompilerProxy<T>>),
+                        resolved_compiler_executable,
                     )
                 })
                 .unwrap_or_else(|_e| {
