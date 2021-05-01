@@ -1,3 +1,5 @@
+#![allow(clippy::unnecessary_lazy_evaluations)]
+
 use std::cmp::Ordering;
 use std::error::Error;
 use std::ffi::OsString;

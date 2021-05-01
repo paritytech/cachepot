@@ -381,7 +381,7 @@ mod tests {
         let n = base64::encode_config(n_be_bytes.as_slice(), base64::URL_SAFE);
         let e = base64::encode_config(e_be_bytes.as_slice(), base64::URL_SAFE);
 
-        let jwk = Jwk {
+        let jwk = crate::token_check::Jwk {
             kty: "RSA".to_owned(),
             kid: "XXX".to_owned(),
             n,

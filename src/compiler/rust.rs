@@ -1131,7 +1131,8 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
                 cannot_cache!(concat!("missing ", stringify!($x)));
             };
         };
-    };
+    }
+
     // We don't actually save the input value, but there needs to be one.
     req!(input);
     drop(input);
@@ -1247,7 +1248,8 @@ where
                 },
         } = *self;
         trace!("[{}]: generate_hash_key", crate_name);
-        // TODO: this doesn't produce correct arguments if they should be concatenated - should use iter_os_strings
+        // TODO: this doesn't produce correct arguments if they
+        // TODO: should be concatenated - should use iter_os_strings
         let os_string_arguments: Vec<(OsString, Option<OsString>)> = arguments
             .iter()
             .map(|arg| {

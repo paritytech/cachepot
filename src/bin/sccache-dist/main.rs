@@ -1,12 +1,10 @@
+#![allow(clippy::complexity)]
+#![deny(clippy::perf)]
+
 #[macro_use]
 extern crate clap;
 #[macro_use]
 extern crate log;
-extern crate nix;
-extern crate openssl;
-extern crate rand;
-extern crate reqwest;
-extern crate sccache;
 #[macro_use]
 extern crate serde_derive;
 
@@ -442,6 +440,7 @@ struct JobDetail {
 
 // To avoid deadlicking, make sure to do all locking at once (i.e. no further locking in a downward scope),
 // in alphabetical order
+#[derive(Default)]
 pub struct Scheduler {
     job_count: AtomicUsize,
 
@@ -465,11 +464,7 @@ struct ServerDetails {
 
 impl Scheduler {
     pub fn new() -> Self {
-        Scheduler {
-            job_count: AtomicUsize::new(0),
-            jobs: Mutex::new(BTreeMap::new()),
-            servers: Mutex::new(HashMap::new()),
-        }
+        Scheduler::default()
     }
 
     fn prune_servers(

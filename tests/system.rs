@@ -111,7 +111,7 @@ fn test_basic_compile(compiler: Compiler, tempdir: &Path) {
         .envs(env_vars.clone())
         .assert()
         .success();
-    assert!(fs::metadata(&out_file).map(|m| m.len() > 0).unwrap());
+    assert!(0 < fs::metadata(&out_file).unwrap().len());
     trace!("request stats");
     get_stats(|info| {
         assert_eq!(1, info.stats.compile_requests);
@@ -128,7 +128,7 @@ fn test_basic_compile(compiler: Compiler, tempdir: &Path) {
         .envs(env_vars)
         .assert()
         .success();
-    assert!(fs::metadata(&out_file).map(|m| m.len() > 0).unwrap());
+    assert!(0 < fs::metadata(&out_file).unwrap().len());
     trace!("request stats");
     get_stats(|info| {
         assert_eq!(2, info.stats.compile_requests);
