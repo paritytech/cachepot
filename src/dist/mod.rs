@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::compiler;
-use rand::{rngs::OsRng, RngCore};
+use rand::RngCore;
 use std::ffi::OsString;
 use std::fmt;
 use std::io::{self, Read};
@@ -370,7 +370,7 @@ impl FromStr for ServerId {
 #[serde(deny_unknown_fields)]
 pub struct ServerNonce(u64);
 impl ServerNonce {
-    pub fn from_rng(rng: &mut rand::rngs::OsRng) -> Self {
+    pub fn from_rng<G: RngCore>(rng: &mut G) -> Self {
         ServerNonce(rng.next_u64())
     }
 }

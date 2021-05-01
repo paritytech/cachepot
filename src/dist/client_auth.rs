@@ -131,7 +131,7 @@ mod code_grant_pkce {
     use futures::future;
     use futures::sync::oneshot;
     use hyper::{Body, Method, Request, Response, StatusCode};
-    use rand::{rngs::OsRng, RngCore};
+    use rand::RngCore;
     use sha2::{Digest, Sha256};
     use std::collections::HashMap;
     use std::sync::mpsc;

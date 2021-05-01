@@ -232,6 +232,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bit-vec"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -352,12 +358,6 @@ checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
 name = "bytes"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0dcbc35f504eb6fc275a6d20e4ebcda18cf50d40ba6fabff8c711fa16cb3b16"
-
-[[package]]
-name = "bytes"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
@@ -442,7 +442,7 @@ dependencies = [
  "futures-util",
  "memchr",
  "pin-project-lite 0.2.6",
- "tokio 0.3.7",
+ "tokio 1.5.0",
 ]
 
 [[package]]
@@ -2306,20 +2306,20 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.18.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9215ee6e440bb40dbdbb4f1cd1548e50a483296741123db9cc2d964ebf956b02"
+checksum = "eeb8f8d059ead7805e171fc22de8348a3d611c0f985aaa4f5cf6c0dfc7645407"
 dependencies = [
  "async-trait",
- "bytes 0.5.6",
+ "bytes 1.0.1",
  "combine",
  "dtoa",
  "futures-util",
  "itoa",
  "percent-encoding 2.1.0",
- "pin-project-lite 0.1.12",
+ "pin-project-lite 0.2.6",
  "sha1",
- "tokio 0.3.7",
+ "tokio 1.5.0",
  "tokio-util",
  "url 2.2.1",
 ]
@@ -2504,6 +2504,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsa-der"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1170c86c683547fa781a0e39e6e281ebaedd4515be8a806022984f427ea3d44d"
+dependencies = [
+ "simple_asn1",
+]
+
+[[package]]
+name = "rsa-export"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b5697ea2f5f70a107ef4dfcf1f0c072ae382c625f5d0b1d647a9e4363f7a519"
+dependencies = [
+ "num-bigint",
+ "num-bigint-dig",
+ "num-integer",
+ "rsa",
+ "simple_asn1",
+]
+
+[[package]]
+name = "rsa-pem"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ee7d87640dab9972e4d05503aad4c30a107ca50912d10596d44f8555b7da4ce"
+dependencies = [
+ "bit-vec",
+ "log 0.4.14",
+ "num-bigint",
+ "num-bigint-dig",
+ "num-traits 0.2.14",
+ "pem",
+ "rsa",
+ "thiserror",
+ "yasna",
+]
+
+[[package]]
 name = "rust-argon2"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2610,6 +2649,7 @@ dependencies = [
  "openssl",
  "percent-encoding 2.1.0",
  "picky",
+ "picky-asn1-x509",
  "predicates",
  "rand 0.7.3",
  "redis",
@@ -2619,6 +2659,9 @@ dependencies = [
  "ring",
  "rouille",
  "rsa",
+ "rsa-der",
+ "rsa-export",
+ "rsa-pem",
  "selenium-rs",
  "serde",
  "serde_derive",
@@ -3147,18 +3190,16 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.3.7"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46409491c9375a693ce7032101970a54f8a2010efb77e13f70788f0d84489e39"
+checksum = "83f0c8e7c0addab50b663055baf787d0af7f413a46e6e7fb9559a4e4db7137a5"
 dependencies = [
  "autocfg 1.0.1",
- "bytes 0.6.0",
- "futures-core",
+ "bytes 1.0.1",
  "libc",
  "memchr",
  "mio 0.7.11",
  "pin-project-lite 0.2.6",
- "slab",
 ]
 
 [[package]]
@@ -3436,16 +3477,16 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.4.0"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24793699f4665ba0416ed287dc794fe6b11a4aa5e4e95b58624f45f6c46b97d4"
+checksum = "940a12c99365c31ea8dd9ba04ec1be183ffe4920102bb7122c2f515437601e8e"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 1.0.1",
  "futures-core",
  "futures-sink",
  "log 0.4.14",
- "pin-project-lite 0.1.12",
- "tokio 0.3.7",
+ "pin-project-lite 0.2.6",
+ "tokio 1.5.0",
 ]
 
 [[package]]
@@ -4025,6 +4066,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "244c3741f4240ef46274860397c7c74e50eb23624996930e484c16679633a54c"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "yasna"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0de7bff972b4f2a06c85f6d8454b09df153af7e3a4ec2aac81db1b105b684ddb"
+dependencies = [
+ "bit-vec",
+ "num-bigint",
 ]
 
 [[package]]

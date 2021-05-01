@@ -274,7 +274,7 @@ fn run(command: Command) -> Result<i32> {
     match command {
         Command::Auth(AuthSubcommand::Base64 { num_bytes }) => {
             let mut bytes = vec![0; num_bytes];
-            let mut rng = rand::rngs::OsRng;
+            let mut rng = OsRng;
             rng.fill_bytes(&mut bytes);
             // As long as it can be copied, it doesn't matter if this is base64 or hex etc
             println!("{}", base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD));
