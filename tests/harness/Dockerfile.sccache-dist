@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as bwrap-build
+FROM ubuntu:20.04 as bwrap-build
 RUN apt-get update && \
     apt-get install -y wget xz-utils gcc libcap-dev make && \
     apt-get clean
@@ -8,6 +8,6 @@ RUN cd /bubblewrap-0.3.1 && \
     ./configure --disable-man && \
     make
 
-FROM fedora:33
+FROM fedora:34
 USER root
 COPY --from=bwrap-build /bubblewrap-0.3.1/bwrap /bwrap

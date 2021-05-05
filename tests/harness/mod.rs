@@ -228,7 +228,7 @@ pub struct DistSystem {
     sccache_dist: PathBuf,
     tmpdir: PathBuf,
 
-    // pod_name: String,
+    pod_name: String,
 
     scheduler_name: Option<String>,
     server_names: Vec<String>,
@@ -257,26 +257,26 @@ impl DistSystem {
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
 
-        // let child = podman!(
-        //     "pod",
-        //     "create",
-        //     "--network=host",
-        //     "-p", format!("{},{}", SCHEDULER_PORT, SERVER_PORT)
-        // )
-        //     .stdout(Stdio::piped())
-        //     .stderr(Stdio::piped())
-        //     .spawn()
-        //     .unwrap();
-        // let output = child.wait_with_output().unwrap();
+        let child = podman!(
+            "pod",
+            "create",
+            "-p", SCHEDULER_PORT.to_string(),
+            "-p", SERVER_PORT.to_string(),
+        )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
 
-        // let s = String::from_utf8(output.stdout).unwrap();
-        // let pod_name = s.trim().to_owned();
+        let s = String::from_utf8(output.stdout).unwrap();
+        let pod_name = dbg!(s.trim().to_owned());
 
         Self {
             sccache_dist: sccache_dist.to_owned(),
             tmpdir,
 
-            // pod_name,
+            pod_name,
             scheduler_name: None,
             server_names: vec![],
             server_pids: vec![],
@@ -298,13 +298,13 @@ impl DistSystem {
         let scheduler_name = make_container_name("scheduler");
         let output = podman!(
                 "run",
-                "-p", SCHEDULER_PORT.to_string(),
+                // "-p", SCHEDULER_PORT.to_string(),
                 "--privileged",
-//                "--cap-add=CAP_SYS_ADMIN",
-//                "--cap-add=CAP_SETFCAP",
+                // "--cap-add=CAP_SYS_ADMIN",
+                // "--cap-add=CAP_SETFCAP",
                 "--userns=keep-id",
-                "--network=host",
-                // "--pod", &self.pod_name,
+                // "--network=host",
+                "--pod", &self.pod_name,
                 "--name",
                 &scheduler_name,
                 "-e",
@@ -348,12 +348,12 @@ impl DistSystem {
                 ) {
                     Ok(())
                 } else {
-                    Err(format!("{:?}", status))
+                    anyhow::bail!("{:?}", status)
                 }
             },
             Duration::from_millis(100),
             MAX_STARTUP_WAIT,
-        );
+        ).unwrap();
     }
 
     pub fn inspect_pod(&self) {
@@ -370,9 +370,9 @@ impl DistSystem {
         let server_name = make_container_name("server");
         let output = podman!(
                 "run",
-                // "--pod", &self.pod_name,
-                "--network=host",
-                "-p", SERVER_PORT.to_string(),
+                "--pod", &self.pod_name,
+                // "--network=host",
+                // "-p", SERVER_PORT.to_string(),
                 // Important for the bubblewrap builder
                 "--name", &server_name,
                 "--userns=keep-id",
@@ -497,12 +497,12 @@ impl DistSystem {
                 ) {
                     Ok(())
                 } else {
-                    Err(format!("{:?}", status))
+                    anyhow::bail!("{:?}", status)
                 }
             },
             Duration::from_millis(100),
             MAX_STARTUP_WAIT,
-        );
+        ).unwrap();
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
@@ -696,29 +696,26 @@ fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
     // TODO: after upgrading to reqwest >= 0.9, use 'danger_accept_invalid_certs' and stick with that rather than tcp
     wait_for(
         || {
-            //match reqwest::get(url.to_url()) {
-            match net::TcpStream::connect(url.to_url()) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.to_string()),
-            }
+            let _ = net::TcpStream::connect(url.to_url())?;
+            Ok(())
         },
         interval,
         max_wait,
-    )
+    ).unwrap()
 }
 
-fn wait_for<F: Fn() -> Result<(), String>>(f: F, interval: Duration, max_wait: Duration) {
+use anyhow::{Error, Result, Context};
+
+fn wait_for<F: Fn() -> Result<()>>(f: F, interval: Duration, max_wait: Duration) -> Result<()> {
     let start = Instant::now();
-    let mut lasterr;
     loop {
         match f() {
-            Ok(()) => return,
-            Err(e) => lasterr = e,
-        }
-        if start.elapsed() > max_wait {
-            break;
+            Ok(_) => return Ok(()),
+            e if start.elapsed() > max_wait => {
+                e.context("Timeout elapsed")?;
+            }
+            _ => {}
         }
         thread::sleep(interval)
     }
-    panic!("wait timed out, last error result: {}", lasterr)
 }

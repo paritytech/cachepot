@@ -22,7 +22,7 @@ name = "sccache-dist"
 required-features = ["dist-server"]
 
 [dependencies]
-anyhow = "1.0"
+anyhow = { version = "1.0", features = ["backtrace"] }
 ar = { version = "0.8", optional = true }
 atty = "0.2.6"
 base64 = "0.13"
@@ -102,6 +102,7 @@ chrono = "0.4"
 itertools = "0.10"
 predicates = "1"
 selenium-rs = "0.1"
+assert_matches = "1.5"
 
 [target.'cfg(unix)'.dependencies]
 daemonize = "0.4"
