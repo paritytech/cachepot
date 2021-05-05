@@ -73,15 +73,17 @@ pub fn stop_local_daemon() {
 }
 
 pub fn get_stats<F: 'static + Fn(ServerInfo)>(f: F) {
+    trace!("sccache --show-stats");
     sccache_command()
         .args(&["--show-stats", "--stats-format=json"])
         .assert()
-        .success()
         .stdout(predicate::function(move |output: &[u8]| {
-            let s = str::from_utf8(output).expect("Output not UTF-8");
-            f(serde_json::from_str(s).expect("Failed to parse JSON stats"));
+            assert!(!output.is_empty(), "Process output must not be empty on stats query. qed");
+            let s = str::from_utf8(dbg!(output)).expect("Output not UTF-8");
+            f(serde_json::from_str(dbg!(s)).expect("Failed to parse JSON stats"));
             true
-        }));
+        }))
+        .success();
 }
 
 #[allow(unused)]
@@ -166,7 +168,6 @@ macro_rules! podman {
             )*
             println!("");
             let mut cmd = Command::new("podman");
-            cmd.arg("--storage-driver=btrfs");
             $(
                 cmd.arg( { $argument });
             )*
@@ -298,8 +299,9 @@ impl DistSystem {
         let output = podman!(
                 "run",
                 "-p", SCHEDULER_PORT.to_string(),
-                "--cap-add=CAP_SYS_ADMIN",
-                "--cap-add=CAP_SETFCAP",
+                "--privileged",
+//                "--cap-add=CAP_SYS_ADMIN",
+//                "--cap-add=CAP_SETFCAP",
                 "--userns=keep-id",
                 "--network=host",
                 // "--pod", &self.pod_name,
