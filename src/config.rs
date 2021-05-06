@@ -411,7 +411,6 @@ pub struct FileConfig {
 // If the file doesn't exist or we can't read it, log the issue and proceed. If the
 // config exists but doesn't parse then something is wrong - return an error.
 pub fn try_read_config_file<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
-    debug!("Attempting to read config file at {:?}", path);
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) => {
@@ -419,6 +418,7 @@ pub fn try_read_config_file<T: DeserializeOwned>(path: &Path) -> Result<Option<T
             return Ok(None);
         }
     };
+    debug!("Found config file at {:?}", path);
 
     let mut string = String::new();
     match file.read_to_string(&mut string) {
