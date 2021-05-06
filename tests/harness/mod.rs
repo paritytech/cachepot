@@ -149,6 +149,7 @@ pub fn sccache_client_cfg(tmpdir: &Path) -> sccache::config::FileConfig {
 }
 
 // #[cfg(feature = "dist-server")]
+#[macro_export]
 macro_rules! podman {
     ( $($argument:expr),* $(,)? ) => {
         {
@@ -540,6 +541,44 @@ impl DistSystem {
         // stdout.trim().to_owned().parse().unwrap()
         "127.0.0.1".parse().unwrap()
     }
+
+    pub fn get_stats<F: 'static + Fn(ServerInfo)>(&self, f: F) {
+        podman!(
+            "run",
+            "--pod", &self.pod_name,
+            // "--network=host",
+            // "-p", SERVER_PORT.to_string(),
+            // Important for the bubblewrap builder
+            "--name", "query_stats",
+            "--userns=keep-id",
+            // "--cap-add=CAP_SYS_ADMIN",
+            // "--cap-add=CAP_SETFCAP",
+            // "--security-opt", "label=disable",
+            "--privileged",
+            "-e", "RUST_LOG=sccache=trace",
+            "-e", "RUST_BACKTRACE=1",
+            "-v",
+            &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
+            "-v",
+            &format!(
+                "{}:{}",
+                self.tmpdir.to_str().unwrap(),
+                CONFIGS_CONTAINER_PATH
+            ),
+            DIST_IMAGE,
+            "sccache",
+            "--show-stats",
+            "--stats-format=json",
+        )
+        .assert()
+        .stdout(predicate::function(move |output: &[u8]| {
+            assert!(!output.is_empty(), "Process output must not be empty on stats query. qed");
+            let s = str::from_utf8(dbg!(output)).expect("Output not UTF-8");
+            f(serde_json::from_str(dbg!(s)).expect("Failed to parse JSON stats"));
+            true
+        }))
+        .success();
+    }
 }
 
 // If you want containers to hang around (e.g. for debugging), commend out the "rm -f" lines
@@ -616,9 +655,9 @@ impl Drop for DistSystem {
             }
         }
 
-        // if let Ok(mut x) = podman!("pod", "rm", &self.pod_name).spawn() {
-        //     let _ = x.wait();
-        // }
+        if let Ok(mut x) = podman!("pod", "rm", &self.pod_name).spawn() {
+            let _ = x.wait();
+        }
 
         for (
             container,

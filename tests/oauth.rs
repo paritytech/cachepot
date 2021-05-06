@@ -1,6 +1,8 @@
 #![deny(rust_2018_idioms)]
 #![cfg(all(feature = "dist-client"))]
 
+mod harness;
+
 use selenium_rs::webdriver::{Browser, Selector, WebDriver};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -143,7 +145,7 @@ impl SeleniumContainer {
         // https://github.com/SeleniumHQ/docker-selenium#running-the-images
         let cid = {
             // It's important to use net=host so that selenium can see pages hosted on localhost
-            let args = &[
+            let output = podman!(
                 "run",
                 "--rm",
                 "-d",
@@ -154,8 +156,7 @@ impl SeleniumContainer {
                 "-e",
                 "SE_OPTS=-debug",
                 "selenium/standalone-chrome-debug:3.14.0",
-            ];
-            let output = Command::new("podman").args(args).output().unwrap();
+            ).output().unwrap();
             check_output(&output);
             let stdout = String::from_utf8(output.stdout).unwrap();
             stdout.trim().to_owned()
@@ -166,19 +167,18 @@ impl SeleniumContainer {
 
 impl Drop for SeleniumContainer {
     fn drop(&mut self) {
-        let Output { stdout, stderr, .. } = Command::new("podman")
-            .args(&["logs", &self.cid])
+        let Output { stdout, stderr, .. } = podman!("logs", &self.cid)
             .output()
             .unwrap();
-        let output = Command::new("podman")
-            .args(&["kill", &self.cid])
+        let output = podman!("kill", &self.cid)
             .output()
             .unwrap();
 
         println!(
-            "====\n> selenium container <:\n## STDOUT\n{}\n\n## STDERR\n{}\n====",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr)
+            "====\n> selenium container <:\n## STDOUT({cmd})\n{stdout}\n\n## STDERR({cmd})\n{stderr}\n====",
+            cmd="selenium_container",
+            stdout=String::from_utf8_lossy(&stdout),
+            stderr=String::from_utf8_lossy(&stderr)
         );
         check_output(&output)
     }
