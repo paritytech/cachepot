@@ -38,7 +38,7 @@ services:
         # integration tests). Please keep that in mind when running the container.
         # TODO: In the future we'd like to run the build sandbox in an unprivileged
         # mode.
-        privileged: true
+        # privileged: true
         build:
             context: .
             dockerfile: Dockerfile.${CACHEPOT_IN_DOCKERFILE:-build}.cachepot-dist
