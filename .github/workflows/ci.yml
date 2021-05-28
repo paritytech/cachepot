@@ -105,6 +105,7 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v1
 
+      - run: cat /proc/sys/kernel/unprivileged_userns_clone
       - name: Install rust
         uses: ./.github/actions/rust-toolchain
         with:
