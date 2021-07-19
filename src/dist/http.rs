@@ -1080,9 +1080,6 @@ mod client {
         scheduler_url: reqwest::Url,
         // cert_digest -> cert_pem
         server_certs: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
-        // TODO: this should really only use the async client, but reqwest async bodies are extremely limited
-        // and only support owned bytes, which means the whole toolchain would end up in memory
-        client: Arc<Mutex<reqwest::blocking::Client>>,
         client_async: Arc<Mutex<reqwest::Client>>,
         pool: tokio::runtime::Handle,
         tc_cache: Arc<cache::ClientToolchains>,
@@ -1101,11 +1098,6 @@ mod client {
         ) -> Result<Self> {
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
             let connect_timeout = Duration::new(CONNECT_TIMEOUT_SECS, 0);
-            let client = reqwest::blocking::ClientBuilder::new()
-                .timeout(timeout)
-                .connect_timeout(connect_timeout)
-                .build()
-                .context("failed to create a HTTP client")?;
             let client_async = reqwest::ClientBuilder::new()
                 .timeout(timeout)
                 .connect_timeout(connect_timeout)
@@ -1118,7 +1110,6 @@ mod client {
                 auth_token,
                 scheduler_url,
                 server_certs: Default::default(),
-                client: Arc::new(Mutex::new(client)),
                 client_async: Arc::new(Mutex::new(client_async)),
                 pool: pool.clone(),
                 tc_cache: Arc::new(client_toolchains),
@@ -1127,43 +1118,29 @@ mod client {
         }
 
         fn update_certs(
-            client: &mut reqwest::blocking::Client,
             client_async: &mut reqwest::Client,
             certs: &mut HashMap<Vec<u8>, Vec<u8>>,
             cert_digest: Vec<u8>,
             cert_pem: Vec<u8>,
         ) -> Result<()> {
-            let mut client_builder = reqwest::blocking::ClientBuilder::new();
             let mut client_async_builder = reqwest::ClientBuilder::new();
             // Add all the certificates we know about
-            client_builder = client_builder.add_root_certificate(
-                reqwest::Certificate::from_pem(&cert_pem)
-                    .context("failed to interpret pem as certificate")?,
-            );
             client_async_builder = client_async_builder.add_root_certificate(
                 reqwest::Certificate::from_pem(&cert_pem)
                     .context("failed to interpret pem as certificate")?,
             );
             for cert_pem in certs.values() {
-                client_builder = client_builder.add_root_certificate(
-                    reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
-                );
                 client_async_builder = client_async_builder.add_root_certificate(
                     reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
                 );
             }
             // Finish the clients
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
-            let new_client = client_builder
-                .timeout(timeout)
-                .build()
-                .context("failed to create a HTTP client")?;
             let new_client_async = client_async_builder
                 .timeout(timeout)
                 .build()
                 .context("failed to create an async HTTP client")?;
             // Use the updated certificates
-            *client = new_client;
             *client_async = new_client_async;
             certs.insert(cert_digest, cert_pem);
             Ok(())
@@ -1178,7 +1155,6 @@ mod client {
             let mut req = self.client_async.lock().unwrap().post(url);
             req = req.bearer_auth(self.auth_token.clone()).bincode(&tc)?;
 
-            let client = self.client.clone();
             let client_async = self.client_async.clone();
             let server_certs = self.server_certs.clone();
 
@@ -1217,7 +1193,6 @@ mod client {
                         .pool
                         .spawn_blocking(move || {
                             Self::update_certs(
-                                &mut client.lock().unwrap(),
                                 &mut client_async.lock().unwrap(),
                                 &mut server_certs.lock().unwrap(),
                                 res.cert_digest,
