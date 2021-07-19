@@ -218,9 +218,8 @@ impl DistClientContainer {
     }
 
     pub fn reset_state(&self) {
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
+        let mut guard = self.state.lock().unwrap();
+        let state = &mut *guard;
         match mem::replace(state, DistClientState::Disabled) {
             DistClientState::Some(cfg, _)
             | DistClientState::FailWithMessage(cfg, _)
@@ -272,10 +271,23 @@ impl DistClientContainer {
     fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
         let mut guard = self.state.lock().unwrap();
         let state = &mut *guard;
-        Self::maybe_recreate_state(state);
+        // Attempt to recreate the client if we scheduled that before
+        match *state {
+            DistClientState::RetryCreateAt(_, instant) if instant <= Instant::now() => {
+                // Move out the boxed config to re-use it when re-creating state
+                let config = match mem::replace(state, DistClientState::Disabled) {
+                    DistClientState::RetryCreateAt(config, _) => config,
+                    _ => unreachable!(),
+                };
+                info!("Attempting to recreate the dist client");
+                *state = Self::create_state(config)
+            }
+            _ => (),
+        }
 
         match *state {
             DistClientState::FailWithMessage(_, _) => {
+                // Move out the boxed config to re-use it when re-creating state
                 let (config, msg) = match mem::replace(state, DistClientState::Disabled) {
                     DistClientState::FailWithMessage(config, msg) => (config, msg),
                     _ => unreachable!(),
@@ -289,21 +301,6 @@ impl DistClientContainer {
             }
             DistClientState::Some(_, ref dc) => Ok(Some(Arc::clone(dc))),
             DistClientState::Disabled | DistClientState::RetryCreateAt(_, _) => Ok(None),
-        }
-    }
-
-    fn maybe_recreate_state(state: &mut DistClientState) {
-        match *state {
-            DistClientState::RetryCreateAt(_, instant) if instant <= Instant::now() => {
-                // Move out the boxed config to re-use it when re-creating state
-                let config = match mem::replace(state, DistClientState::Disabled) {
-                    DistClientState::RetryCreateAt(config, _) => config,
-                    _ => unreachable!(),
-                };
-                info!("Attempting to recreate the dist client");
-                *state = Self::create_state(config)
-            }
-            _ => (),
         }
     }
 
@@ -348,9 +345,10 @@ impl DistClientContainer {
                     | config::DistAuth::Oauth2Implicit { auth_url, .. } => {
                         Self::get_cached_config_auth_token(auth_url)
                     }
-                };
-                let auth_token = try_or_fail_with_message!(auth_token
-                    .context("could not load client auth token, run |cachepot --dist-auth|"));
+                }
+                .context("could not load client auth token, run |cachepot --dist-auth|");
+                let auth_token = try_or_fail_with_message!(auth_token);
+
                 let dist_client = dist::http::Client::new(
                     &config.pool,
                     url,
@@ -359,9 +357,10 @@ impl DistClientContainer {
                     &config.toolchains,
                     auth_token,
                     config.rewrite_includes_only,
-                );
-                let dist_client =
-                    try_or_retry_later!(dist_client.context("failure during dist client creation"));
+                )
+                .context("failure during dist client creation");
+                let dist_client = try_or_retry_later!(dist_client);
+
                 use crate::dist::Client;
                 match config.pool.block_on(dist_client.do_get_status()) {
                     Ok(res) => {
