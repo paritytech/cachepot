@@ -69,6 +69,7 @@ mod common {
         }
     }
 
+    #[cfg(feature = "dist-server")]
     pub fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::blocking::RequestBuilder,
     ) -> Result<T> {
@@ -1065,8 +1066,8 @@ mod client {
     use std::time::Duration;
 
     use super::common::{
-        bincode_req, bincode_req_fut, AllocJobHttpResponse, ReqwestRequestBuilderExt,
-        RunJobHttpRequest, ServerCertificateHttpResponse,
+        bincode_req_fut, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
+        ServerCertificateHttpResponse,
     };
     use super::urls;
     use crate::errors::*;
@@ -1236,9 +1237,9 @@ mod client {
         async fn do_get_status(&self) -> Result<SchedulerStatusResult> {
             let scheduler_url = self.scheduler_url.clone();
             let url = urls::scheduler_status(&scheduler_url);
-            let req = self.client.lock().unwrap().get(url);
+            let req = self.client_async.lock().unwrap().get(url);
 
-            self.pool.spawn_blocking(move || bincode_req(req)).await?
+            bincode_req_fut(req).await
         }
 
         async fn do_submit_toolchain(
@@ -1249,16 +1250,19 @@ mod client {
             match self.tc_cache.get_toolchain(&tc) {
                 Ok(Some(toolchain_file)) => {
                     let url = urls::server_submit_toolchain(job_alloc.server_id, job_alloc.job_id);
-                    let req = self.client.lock().unwrap().post(url);
-                    self.pool
-                        .spawn_blocking(move || {
-                            let toolchain_file_size = toolchain_file.metadata()?.len();
-                            let body =
-                                reqwest::blocking::Body::sized(toolchain_file, toolchain_file_size);
-                            let req = req.bearer_auth(job_alloc.auth).body(body);
-                            bincode_req(req)
-                        })
-                        .await?
+                    let req = self.client_async.lock().unwrap().post(url);
+
+                    let _toolchain_file_exists = toolchain_file.metadata()?;
+
+                    use tokio_util::codec::{BytesCodec, FramedRead};
+                    let toolchain_file = toolchain_file.into_parts().0;
+                    let toolchain_file = tokio::fs::File::from_std(toolchain_file);
+                    let stream = FramedRead::new(toolchain_file, BytesCodec::new());
+
+                    let body = reqwest::Body::wrap_stream(stream);
+
+                    let req = req.bearer_auth(job_alloc.auth).body(body);
+                    bincode_req_fut(req).await
                 }
                 Ok(None) => Err(anyhow!("couldn't find toolchain locally")),
                 Err(e) => Err(e),
@@ -1273,9 +1277,10 @@ mod client {
             inputs_packager: Box<dyn InputsPackager>,
         ) -> Result<(RunJobResult, PathTransformer)> {
             let url = urls::server_run_job(job_alloc.server_id, job_alloc.job_id);
-            let mut req = self.client.lock().unwrap().post(url);
+            let req = self.client_async.lock().unwrap().post(url);
 
-            self.pool
+            let (path_transformer, compressed_body) = self
+                .pool
                 .spawn_blocking(move || {
                     let bincode = bincode::serialize(&RunJobHttpRequest { command, outputs })
                         .context("failed to serialize run job request")?;
@@ -1301,10 +1306,16 @@ mod client {
                         compressor.finish().context("failed to finish compressor")?;
                     }
 
-                    req = req.bearer_auth(job_alloc.auth.clone()).bytes(body);
-                    bincode_req(req).map(|res| (res, path_transformer))
+                    ::core::result::Result::<_, anyhow::Error>::Ok((path_transformer, body))
                 })
-                .await?
+                .await??;
+
+            let req = req
+                .bearer_auth(job_alloc.auth.clone())
+                .bytes(compressed_body);
+            let res = bincode_req_fut(req).await?;
+
+            Ok((res, path_transformer))
         }
 
         async fn put_toolchain(

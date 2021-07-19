@@ -138,7 +138,7 @@ native-zlib = []
 # Enable features that require unstable features of Nightly Rust.
 unstable = []
 # Enables distributed support in the cachepot client
-dist-client = ["ar", "flate2", "hyper", "hyperx", "reqwest", "url", "sha2"]
+dist-client = ["ar", "flate2", "hyper", "hyperx", "reqwest/stream", "url", "sha2", "tokio/fs"]
 # Enables the cachepot-dist binary
 dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest", "rouille", "sha2", "syslog", "void", "version-compare"]
 # Enables dist tests with external requirements
