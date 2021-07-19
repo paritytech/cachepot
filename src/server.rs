@@ -159,8 +159,11 @@ enum DistClientState {
     #[cfg(feature = "dist-client")]
     Some(Box<DistClientConfig>, Arc<dyn dist::Client>),
     #[cfg(feature = "dist-client")]
+    /// Initialization failed and will not be attempted again.
+    /// Includes a user-facing error.
     FailWithMessage(Box<DistClientConfig>, String),
     #[cfg(feature = "dist-client")]
+    /// Initialization will be attempted again at a specified `Instant`.
     RetryCreateAt(Box<DistClientConfig>, Instant),
     Disabled,
 }
@@ -202,7 +205,7 @@ impl DistClientContainer {
             toolchains: config.dist.toolchains.clone(),
             rewrite_includes_only: config.dist.rewrite_includes_only,
         };
-        let state = Self::create_state(config);
+        let state = Self::create_state(Box::new(config));
         Self {
             state: Mutex::new(state),
         }
@@ -234,10 +237,8 @@ impl DistClientContainer {
         // This function can't be wholly async because we can't hold mutex guard
         // across the yield point - instead, either return an immediately ready
         // future or perform async query with the client cloned beforehand.
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
-        let (client, scheduler_url) = match state {
+        let guard = self.state.lock().unwrap();
+        let (client, scheduler_url) = match &*guard {
             DistClientState::Disabled => {
                 return Either::Left(future::ready(DistInfo::Disabled("disabled".to_string())))
             }
@@ -255,12 +256,13 @@ impl DistClientContainer {
             }
             DistClientState::Some(cfg, client) => (Arc::clone(client), cfg.scheduler_url.clone()),
         };
+        drop(guard);
 
         Either::Right(Box::pin(async move {
             match client.do_get_status().await {
-                Ok(res) => DistInfo::SchedulerStatus(scheduler_url.clone(), res),
+                Ok(res) => DistInfo::SchedulerStatus(scheduler_url, res),
                 Err(_) => DistInfo::NotConnected(
-                    scheduler_url.clone(),
+                    scheduler_url,
                     "could not communicate with scheduler".to_string(),
                 ),
             }
@@ -268,44 +270,45 @@ impl DistClientContainer {
     }
 
     fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
+        let mut guard = self.state.lock().unwrap();
+        let state = &mut *guard;
         Self::maybe_recreate_state(state);
-        let res = match state {
-            DistClientState::Some(_, dc) => Ok(Some(dc.clone())),
+
+        match *state {
+            DistClientState::FailWithMessage(_, _) => {
+                let (config, msg) = match mem::replace(state, DistClientState::Disabled) {
+                    DistClientState::FailWithMessage(config, msg) => (config, msg),
+                    _ => unreachable!(),
+                };
+                // The client is most likely mis-configured, make sure we
+                // re-create on our next attempt.
+                *state =
+                    DistClientState::RetryCreateAt(config, Instant::now() - Duration::from_secs(1));
+
+                Err(anyhow!(msg.clone()))
+            }
+            DistClientState::Some(_, ref dc) => Ok(Some(Arc::clone(dc))),
             DistClientState::Disabled | DistClientState::RetryCreateAt(_, _) => Ok(None),
-            DistClientState::FailWithMessage(_, msg) => Err(anyhow!(msg.clone())),
-        };
-        if res.is_err() {
-            let config = match mem::replace(state, DistClientState::Disabled) {
-                DistClientState::FailWithMessage(config, _) => config,
-                _ => unreachable!(),
-            };
-            // The client is most likely mis-configured, make sure we
-            // re-create on our next attempt.
-            *state =
-                DistClientState::RetryCreateAt(config, Instant::now() - Duration::from_secs(1));
         }
-        res
     }
 
     fn maybe_recreate_state(state: &mut DistClientState) {
-        if let DistClientState::RetryCreateAt(_, instant) = *state {
-            if instant > Instant::now() {
-                return;
+        match *state {
+            DistClientState::RetryCreateAt(_, instant) if instant <= Instant::now() => {
+                // Move out the boxed config to re-use it when re-creating state
+                let config = match mem::replace(state, DistClientState::Disabled) {
+                    DistClientState::RetryCreateAt(config, _) => config,
+                    _ => unreachable!(),
+                };
+                info!("Attempting to recreate the dist client");
+                *state = Self::create_state(config)
             }
-            let config = match mem::replace(state, DistClientState::Disabled) {
-                DistClientState::RetryCreateAt(config, _) => config,
-                _ => unreachable!(),
-            };
-            info!("Attempting to recreate the dist client");
-            *state = Self::create_state(*config)
+            _ => (),
         }
     }
 
     // Attempt to recreate the dist client
-    fn create_state(config: DistClientConfig) -> DistClientState {
+    fn create_state(config: Box<DistClientConfig>) -> DistClientState {
         macro_rules! try_or_retry_later {
             ($v:expr) => {{
                 match $v {
@@ -314,7 +317,7 @@ impl DistClientContainer {
                         // `{:?}` prints the full cause chain and backtrace.
                         error!("{:?}", e);
                         return DistClientState::RetryCreateAt(
-                            Box::new(config),
+                            config,
                             Instant::now() + DIST_CLIENT_RECREATE_TIMEOUT,
                         );
                     }
@@ -330,10 +333,7 @@ impl DistClientContainer {
                         // `{:?}` prints the full cause chain and backtrace.
                         let errmsg = format!("{:?}", e);
                         error!("{}", errmsg);
-                        return DistClientState::FailWithMessage(
-                            Box::new(config),
-                            errmsg.to_string(),
-                        );
+                        return DistClientState::FailWithMessage(config, errmsg.to_string());
                     }
                 }
             }};
@@ -369,12 +369,12 @@ impl DistClientContainer {
                             "Successfully created dist client with {:?} cores across {:?} servers",
                             res.num_cpus, res.num_servers
                         );
-                        DistClientState::Some(Box::new(config), Arc::new(dist_client))
+                        DistClientState::Some(config, Arc::new(dist_client))
                     }
                     Err(_) => {
                         warn!("Scheduler address configured, but could not communicate with scheduler");
                         DistClientState::RetryCreateAt(
-                            Box::new(config),
+                            config,
                             Instant::now() + DIST_CLIENT_RECREATE_TIMEOUT,
                         )
                     }
