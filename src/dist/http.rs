@@ -1182,26 +1182,13 @@ mod client {
                         .await
                         .context("GET to scheduler server_certificate failed")?;
 
-                    // TODO: Move to asynchronous reqwest client only.
-                    // This function internally builds a blocking reqwest client;
-                    // However, it does so by utilizing a runtime which it drops,
-                    // triggering (rightfully) a sanity check that prevents from
-                    // dropping a runtime in asynchronous context.
-                    // For the time being, we work around this by off-loading it
-                    // to a dedicated blocking-friendly thread pool.
-                    let _ = self
-                        .pool
-                        .spawn_blocking(move || {
-                            Self::update_certs(
-                                &mut client_async.lock().unwrap(),
-                                &mut server_certs.lock().unwrap(),
-                                res.cert_digest,
-                                res.cert_pem,
-                            )
-                            .context("Failed to update certificate")
-                            .unwrap_or_else(|e| warn!("Failed to update certificate: {:?}", e));
-                        })
-                        .await;
+                    Self::update_certs(
+                        &mut client_async.lock().unwrap(),
+                        &mut server_certs.lock().unwrap(),
+                        res.cert_digest,
+                        res.cert_pem,
+                    )
+                    .unwrap_or_else(|e| warn!("Failed to update certificate: {:?}", e));
 
                     alloc_job_res
                 }
