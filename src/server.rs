@@ -225,8 +225,7 @@ impl DistClientContainer {
             | DistClientState::FailWithMessage(cfg, _)
             | DistClientState::RetryCreateAt(cfg, _) => {
                 warn!("State reset. Will recreate");
-                *state =
-                    DistClientState::RetryCreateAt(cfg, Instant::now() - Duration::from_secs(1));
+                *state = DistClientState::RetryCreateAt(cfg, Instant::now());
             }
             DistClientState::Disabled => (),
         }
@@ -294,8 +293,7 @@ impl DistClientContainer {
                 };
                 // The client is most likely mis-configured, make sure we
                 // re-create on our next attempt.
-                *state =
-                    DistClientState::RetryCreateAt(config, Instant::now() - Duration::from_secs(1));
+                *state = DistClientState::RetryCreateAt(config, Instant::now());
 
                 Err(anyhow!(msg.clone()))
             }
