@@ -295,7 +295,7 @@ impl DistClientContainer {
                 // re-create on our next attempt.
                 *state = DistClientState::RetryCreateAt(config, Instant::now());
 
-                Err(anyhow!(msg.clone()))
+                Err(anyhow!(msg))
             }
             DistClientState::Some(_, ref dc) => Ok(Some(Arc::clone(dc))),
             DistClientState::Disabled | DistClientState::RetryCreateAt(_, _) => Ok(None),
