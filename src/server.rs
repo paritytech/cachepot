@@ -276,7 +276,7 @@ impl DistClientContainer {
                 // Move out the boxed config to re-use it when re-creating state
                 let config = match mem::replace(state, DistClientState::Disabled) {
                     DistClientState::RetryCreateAt(config, _) => config,
-                    _ => unreachable!(),
+                    _ => unreachable!("just checked above"),
                 };
                 info!("Attempting to recreate the dist client");
                 *state = Self::create_state(config)
@@ -289,7 +289,7 @@ impl DistClientContainer {
                 // Move out the boxed config to re-use it when re-creating state
                 let (config, msg) = match mem::replace(state, DistClientState::Disabled) {
                     DistClientState::FailWithMessage(config, msg) => (config, msg),
-                    _ => unreachable!(),
+                    _ => unreachable!("just checked above"),
                 };
                 // The client is most likely mis-configured, make sure we
                 // re-create on our next attempt.
