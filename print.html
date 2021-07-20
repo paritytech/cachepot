@@ -1,0 +1,857 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>cachepot design goals</title>
+                <meta name="robots" content="noindex" />
+                
+
+        <!-- Custom HTML head -->
+        
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+                <link rel="icon" href="favicon.svg">
+                        <link rel="shortcut icon" href="favicon.png">
+                <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+                <link rel="stylesheet" href="css/print.css" media="print">
+        
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+                <link rel="stylesheet" href="fonts/fonts.css">
+        
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+                <!-- MathJax -->
+        <script async type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+            </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="dist/quickstart.html"><strong aria-hidden="true">1.</strong> Quickstart</a></li><li class="chapter-item expanded "><a href="intro.html"><strong aria-hidden="true">2.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="dist/quickstart.html"><strong aria-hidden="true">3.</strong> Full</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">4.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="ci/gitlab.html"><strong aria-hidden="true">5.</strong> gitlab</a></li><li class="chapter-item expanded "><a href="ci/jenkins.html"><strong aria-hidden="true">6.</strong> jenkins</a></li><li class="chapter-item expanded "><a href="ci/concourse.html"><strong aria-hidden="true">7.</strong> concourse.ci</a></li><li class="chapter-item expanded "><a href="development/notation.html"><strong aria-hidden="true">8.</strong> Notation</a></li><li class="chapter-item expanded "><a href="development/notation.html"><strong aria-hidden="true">9.</strong> Architecture</a></li><li class="chapter-item expanded "><a href="development/threatmodel.html"><strong aria-hidden="true">10.</strong> Threat Model</a></li><li class="chapter-item expanded "><a href="development/roadmap.html"><strong aria-hidden="true">11.</strong> Roadmap</a></li><li class="chapter-item expanded "><a href="development/configuration.html"><strong aria-hidden="true">12.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="development/faq.html"><strong aria-hidden="true">13.</strong> FAQ</a></li></ol>            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                                                <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                                            </div>
+
+                    <h1 class="menu-title">cachepot design goals</h1>
+
+                    <div class="right-buttons">
+                                                <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                                                                        
+                    </div>
+                </div>
+
+                                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="cachepot-distributed-compilation-quickstart"><a class="header" href="#cachepot-distributed-compilation-quickstart">cachepot distributed compilation quickstart</a></h1>
+<p>This is a quick start guide to getting distributed compilation working with cachepot. This guide primarily covers Linux clients.
+macOS and Windows clients are supported but have seen significantly less testing.</p>
+<h2 id="get-cachepot-binaries"><a class="header" href="#get-cachepot-binaries">Get cachepot binaries</a></h2>
+<p>Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the <code>dist-client</code> and <code>dist-server</code> features enabled:</p>
+<pre><code class="language-sh">cargo build --release --features=&quot;dist-client dist-server&quot;
+</code></pre>
+<p>The <code>target/release/cachepot</code> binary will be used on the client, and the <code>target/release/cachepot-dist</code> binary will be used on the scheduler and build server.</p>
+<p>If you're only planning to use the client, it is enabled by default, so just <code>cargo install cachepot</code> should do the trick.</p>
+<h2 id="configure-a-scheduler"><a class="header" href="#configure-a-scheduler">Configure a scheduler</a></h2>
+<p>If you're adding a server to a cluster that has already be set up, skip ahead to <a href="dist/quickstart.html#configure-a-build-server">configuring a build server</a>.</p>
+<p>The scheduler is a daemon that manages compile request from clients and parcels them out to build servers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.</p>
+<p>Create a scheduler.conf file to configure client/server authentication. A minimal example looks like:</p>
+<pre><code class="language-toml"># The socket address the scheduler will listen on. It's strongly recommended
+# to listen on localhost and put a HTTPS server in front of it.
+public_addr = &quot;127.0.0.1:10600&quot;
+
+[client_auth]
+type = &quot;token&quot;
+token = &quot;my client token&quot;
+
+[server_auth]
+type = &quot;jwt_hs256&quot;
+secret_key = &quot;my secret key&quot;
+</code></pre>
+<p>Mozilla build servers will typically require clients to be authenticated with the
+<a href="https://github.com/mozilla-iam/mozilla-iam">Mozilla identity system</a>.</p>
+<p>To configure for scheduler for this, the <code>client_auth</code> section should be as follows
+so any client tokens are validated with the Mozilla service:</p>
+<pre><code class="language-toml">[client_auth]
+type = &quot;mozilla&quot;
+required_groups = [&quot;group_name&quot;]
+</code></pre>
+<p>Where <code>group_name</code> is a Mozilla LDAP group. Users will be required to belong to this group to successfully authenticate with the scheduler.</p>
+<p>Start the scheduler by running:</p>
+<pre><code class="language-sh">cachepot-dist scheduler --config scheduler.conf
+</code></pre>
+<p>Like the local server, the scheduler process will daemonize itself unless <code>CACHEPOT_NO_DAEMON=1</code> is set. If the scheduler fails to start you may need to set <code>RUST_LOG=trace</code> when starting it to get useful diagnostics (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<h3 id="configure-a-build-server"><a class="header" href="#configure-a-build-server">Configure a build server</a></h3>
+<p>A build server communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build server, but executing cross-compile requests from macOS/Windows clients is supported.</p>
+<p>The build server requires <a href="https://github.com/projectatomic/bubblewrap">bubblewrap</a> to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap <em>before</em> attempting to run the server. On Ubuntu 18.10+ you can <code>apt install bubblewrap</code> to install it. If you build from source you will need to first install your distro's equivalent of the <code>libcap-dev</code> package.</p>
+<p>Create a server.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:</p>
+<pre><code class="language-toml"># This is where client toolchains will be stored.
+cache_dir = &quot;/tmp/toolchains&quot;
+# The maximum size of the toolchain cache, in bytes.
+# If unspecified the default is 10GB.
+# toolchain_cache_size = 10737418240
+# A public IP address and port that clients will use to connect to this builder.
+public_addr = &quot;192.168.1.1:10501&quot;
+# The URL used to connect to the scheduler (should use https, given an ideal
+# setup of a HTTPS server in front of the scheduler)
+scheduler_url = &quot;https://192.168.1.1&quot;
+
+[builder]
+type = &quot;overlay&quot;
+# The directory under which a sandboxed filesystem will be created for builds.
+build_dir = &quot;/tmp/build&quot;
+# The path to the bubblewrap version 0.3.0+ `bwrap` binary.
+bwrap_path = &quot;/usr/bin/bwrap&quot;
+
+[scheduler_auth]
+type = &quot;jwt_token&quot;
+# This will be generated by the `generate-jwt-hs256-server-token` command or
+# provided by an administrator of the cachepot cluster.
+token = &quot;my server's token&quot;
+</code></pre>
+<p>Due to <code>bubblewrap</code> requirements currently the build server <em>must</em> be run as root. Start the build server by running:</p>
+<pre><code class="language-toml">sudo cachepot-dist server --config server.conf
+</code></pre>
+<p>As with the scheduler, if the build server fails to start you may need to set <code>RUST_LOG=trace</code> to get useful diagnostics. (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<h2 id="configure-a-client"><a class="header" href="#configure-a-client">Configure a client</a></h2>
+<p>A client uses <code>cachepot</code> to wrap compile commands, communicates with the scheduler to find available build servers, and communicates with build servers to execute the compiles and receive the results.</p>
+<p>Clients that are not targeting linux64 require the <code>icecc-create-env</code> script or should be provided with an archive. <code>icecc-create-env</code> is part of <code>icecream</code> for packaging toolchains. You can install icecream to get this script (<code>apt install icecc</code> on Ubuntu), or download it from the git repository and place it in your <code>PATH</code>: <code>curl https://raw.githubusercontent.com/icecc/icecream/master/client/icecc-create-env.in &gt; icecc-create-env &amp;&amp; chmod +x icecc-create-env</code>. See <a href="dist/quickstart.html#using-custom-toolchains">using custom toolchains</a>.</p>
+<p>Create a client config file in <code>~/.config/cachepot/config</code> (on Linux), <code>~/Library/Application Support/Parity.cachepot/config</code> (on macOS), or <code>%APPDATA%\Parity\cachepot\config\config</code> (on Windows). A minimal example looks like:</p>
+<pre><code class="language-toml">[dist]
+# The URL used to connect to the scheduler (should use https, given an ideal
+# setup of a HTTPS server in front of the scheduler)
+scheduler_url = &quot;https://192.168.1.1&quot;
+# Used for mapping local toolchains to remote cross-compile toolchains. Empty in
+# this example where the client and build server are both Linux.
+toolchains = []
+# Size of the local toolchain cache, in bytes (5GB here, 10GB if unspecified).
+toolchain_cache_size = 5368709120
+
+[dist.auth]
+type = &quot;token&quot;
+# This should match the `client_auth` section of the scheduler config.
+token = &quot;my client token&quot;
+</code></pre>
+<p>Clients using Mozilla build servers should configure their <code>dist.auth</code> section as follows:</p>
+<pre><code class="language-toml">[dist.auth]
+type = &quot;mozilla&quot;
+</code></pre>
+<p>And retrieve a token from the Mozilla identity service by running <code>cachepot --dist-auth</code>
+and following the instructions. Completing this process will retrieve and cache a token
+valid for 7 days.</p>
+<p>Make sure to run <code>cachepot --stop-server</code> and <code>cachepot --start-server</code> if cachepot was
+running before changing the configuration.</p>
+<p>You can check the status with <code>cachepot --dist-status</code>, it should say something like:</p>
+<pre><code class="language-toml">$ cachepot --dist-status
+{&quot;SchedulerStatus&quot;:[&quot;https://cachepot1.corpdmz.ber3.mozilla.com/&quot;,{&quot;num_servers&quot;:3,&quot;num_cpus&quot;:56,&quot;in_progress&quot;:24}]}
+</code></pre>
+<p>For diagnostics, advice for scheduler/server does not work with <code>RUSTC_WRAPPER</code>. Therefore following approach is advised: <code>CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build</code>.</p>
+<h3 id="using-custom-toolchains"><a class="header" href="#using-custom-toolchains">Using custom toolchains</a></h3>
+<p>Since Windows and macOS cannot automatically package toolchains, it is important to be
+able to manually specify toolchains for distribution. This functionality is also available
+on Linux.</p>
+<p>Using custom toolchains involves adding a <code>dist.toolchains</code> section to your client config
+file (you can add it multiple times to specify multiple toolchains).</p>
+<p>On Linux and macOS:</p>
+<pre><code class="language-toml">[[dist.toolchains]]
+type = &quot;path_override&quot;
+compiler_executable = &quot;/home/me/.mozbuild/clang/bin/clang&quot;
+archive = &quot;/home/me/.mozbuild/toolchains/33d92fcd79ffef6e-clang-dist-toolchain.tar.xz&quot;
+archive_compiler_executable = &quot;/builds/worker/toolchains/clang/bin/clang&quot;
+</code></pre>
+<p>On Windows:</p>
+<pre><code class="language-toml">[[dist.toolchains]]
+type = &quot;path_override&quot;
+compiler_executable = &quot;C:/clang/bin\\clang-cl.exe&quot;
+archive = &quot;C:/toolchains/33d92fcd79ffef6e-clang-dist-toolchain.tar.xz&quot;
+archive_compiler_executable = &quot;/builds/worker/toolchains/clang/bin/clang&quot;
+</code></pre>
+<p>Where:</p>
+<ul>
+<li><code>compiler_executable</code> identifies the path that cachepot will match against to activate
+this configuration (you need to be careful on Windows - paths can have slashes in both
+directions, and you may need to escape backslashes, as in the example)</li>
+<li><code>archive</code> is the compressed tar archive containing the compiler toolchain to distribute
+when <code>compiler_executable</code> is matched</li>
+<li><code>archive_compiler_executable</code> is the path within the archive the distributed
+compilation should invoke</li>
+</ul>
+<p>A toolchain archive should be a Gzip compressed TAR archive, containing a filesystem
+sufficient to run the compiler without relying on any external files. If you have archives
+compatible with icecream (created with <code>icecc-create-env</code>, like
+<a href="https://github.com/jyavenard/mozilla-icecream">these ones</a> for macOS), they should also work
+with cachepot. To create a Windows toolchain, it is recommended that you download the <a href="http://releases.llvm.org/download.html">Clang
+binaries for Ubuntu 16.04</a> and extract them,
+package up the toolchain using the extracted <code>bin/clang</code> file (requires
+<a href="https://github.com/mozilla/sccache/pull/321">PR #321</a>) and then insert <code>bin/clang-cl</code> at
+the appropriate path as a symlink to the <code>bin/clang</code> binary.</p>
+<h2 id="considerations-when-distributing-from-macos"><a class="header" href="#considerations-when-distributing-from-macos">Considerations when distributing from macOS</a></h2>
+<p>When distributing from a macOS client, additional flags and configuration
+may be required:</p>
+<ul>
+<li>An explicit target should be passed to the compiler, for instance by adding
+<code>--target=x86_64-apple-darwin16.0.0</code> to your build system's <code>CFLAGS</code>.</li>
+<li>An explicit toolchain archive will need to be configured, as described above.
+In case rust is being cached, the same version of <code>rustc</code> will need to be used
+for local compiles as is found in the distributed archive.</li>
+<li>The client config will be read from <code>~/Library/Application Support/Parity.cachepot/config</code>,
+not <code>~/.config/cachepot/config</code>.</li>
+<li>Some cross compilers may not understand some intrinsics used in more recent macOS
+SDKs. The 10.11 SDK is known to work.</li>
+</ul>
+<h2 id="making-a-build-server-start-at-boot-time"><a class="header" href="#making-a-build-server-start-at-boot-time">Making a build server start at boot time</a></h2>
+<p>It is very easy with a systemd service to spawn the server on boot.</p>
+<p>You can create a service file like <code>/etc/systemd/system/cachepot-server.service</code>
+with the following contents:</p>
+<pre><code class="language-toml">[Unit]
+Description=cachepot-dist server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/path/to/cachepot-dist server --config /path/to/server.conf
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p><strong>Note</strong> that if the <code>cachepot-dist</code> binary is in a user's home directory, and
+you're in a distro with SELinux enabled (like Fedora), you may need to use an
+<code>ExecStart</code> line like:</p>
+<pre><code class="language-toml">ExecStart=/bin/bash -c &quot;/home/&lt;user&gt;/path/to/cachepot-dist server --config /home/&lt;user&gt;/path/to/server.conf&quot;
+</code></pre>
+<p>This is because SELinux by default prevents services from running binaries in
+home directories, for some reason. Using a shell works around that. An
+alternative would be to move the <code>cachepot-dist</code> binary to somewhere like
+<code>/usr/local/bin</code>, but then you need to remember to update it manually.</p>
+<p>After creating that file, you can ensure it's working and enable it by default
+like:</p>
+<pre><code class="language-sh">systemctl daemon-reload
+systemctl start cachepot-server
+systemctl status # And check it's fine.
+systemctl enable cachepot-server # This enables the service on boot
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p><code>cachepot</code> is a fork of <code>sccache</code>.</p>
+<p>The purpose of this fork is to introduce advanced security concepts to avoid certain attack scenarios as well
+as preventing bitrot.</p>
+<h2 id="scope"><a class="header" href="#scope">Scope</a></h2>
+<p>The scope of this document is to explain the status quo, define security goals and will
+eventually exist as the reference documentation, once major milestones are achieved.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cachepot-distributed-compilation-quickstart-1"><a class="header" href="#cachepot-distributed-compilation-quickstart-1">cachepot distributed compilation quickstart</a></h1>
+<p>This is a quick start guide to getting distributed compilation working with cachepot. This guide primarily covers Linux clients.
+macOS and Windows clients are supported but have seen significantly less testing.</p>
+<h2 id="get-cachepot-binaries-1"><a class="header" href="#get-cachepot-binaries-1">Get cachepot binaries</a></h2>
+<p>Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the <code>dist-client</code> and <code>dist-server</code> features enabled:</p>
+<pre><code class="language-sh">cargo build --release --features=&quot;dist-client dist-server&quot;
+</code></pre>
+<p>The <code>target/release/cachepot</code> binary will be used on the client, and the <code>target/release/cachepot-dist</code> binary will be used on the scheduler and build server.</p>
+<p>If you're only planning to use the client, it is enabled by default, so just <code>cargo install cachepot</code> should do the trick.</p>
+<h2 id="configure-a-scheduler-1"><a class="header" href="#configure-a-scheduler-1">Configure a scheduler</a></h2>
+<p>If you're adding a server to a cluster that has already be set up, skip ahead to <a href="dist/quickstart.html#configure-a-build-server">configuring a build server</a>.</p>
+<p>The scheduler is a daemon that manages compile request from clients and parcels them out to build servers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.</p>
+<p>Create a scheduler.conf file to configure client/server authentication. A minimal example looks like:</p>
+<pre><code class="language-toml"># The socket address the scheduler will listen on. It's strongly recommended
+# to listen on localhost and put a HTTPS server in front of it.
+public_addr = &quot;127.0.0.1:10600&quot;
+
+[client_auth]
+type = &quot;token&quot;
+token = &quot;my client token&quot;
+
+[server_auth]
+type = &quot;jwt_hs256&quot;
+secret_key = &quot;my secret key&quot;
+</code></pre>
+<p>Mozilla build servers will typically require clients to be authenticated with the
+<a href="https://github.com/mozilla-iam/mozilla-iam">Mozilla identity system</a>.</p>
+<p>To configure for scheduler for this, the <code>client_auth</code> section should be as follows
+so any client tokens are validated with the Mozilla service:</p>
+<pre><code class="language-toml">[client_auth]
+type = &quot;mozilla&quot;
+required_groups = [&quot;group_name&quot;]
+</code></pre>
+<p>Where <code>group_name</code> is a Mozilla LDAP group. Users will be required to belong to this group to successfully authenticate with the scheduler.</p>
+<p>Start the scheduler by running:</p>
+<pre><code class="language-sh">cachepot-dist scheduler --config scheduler.conf
+</code></pre>
+<p>Like the local server, the scheduler process will daemonize itself unless <code>CACHEPOT_NO_DAEMON=1</code> is set. If the scheduler fails to start you may need to set <code>RUST_LOG=trace</code> when starting it to get useful diagnostics (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<h3 id="configure-a-build-server-1"><a class="header" href="#configure-a-build-server-1">Configure a build server</a></h3>
+<p>A build server communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build server, but executing cross-compile requests from macOS/Windows clients is supported.</p>
+<p>The build server requires <a href="https://github.com/projectatomic/bubblewrap">bubblewrap</a> to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap <em>before</em> attempting to run the server. On Ubuntu 18.10+ you can <code>apt install bubblewrap</code> to install it. If you build from source you will need to first install your distro's equivalent of the <code>libcap-dev</code> package.</p>
+<p>Create a server.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:</p>
+<pre><code class="language-toml"># This is where client toolchains will be stored.
+cache_dir = &quot;/tmp/toolchains&quot;
+# The maximum size of the toolchain cache, in bytes.
+# If unspecified the default is 10GB.
+# toolchain_cache_size = 10737418240
+# A public IP address and port that clients will use to connect to this builder.
+public_addr = &quot;192.168.1.1:10501&quot;
+# The URL used to connect to the scheduler (should use https, given an ideal
+# setup of a HTTPS server in front of the scheduler)
+scheduler_url = &quot;https://192.168.1.1&quot;
+
+[builder]
+type = &quot;overlay&quot;
+# The directory under which a sandboxed filesystem will be created for builds.
+build_dir = &quot;/tmp/build&quot;
+# The path to the bubblewrap version 0.3.0+ `bwrap` binary.
+bwrap_path = &quot;/usr/bin/bwrap&quot;
+
+[scheduler_auth]
+type = &quot;jwt_token&quot;
+# This will be generated by the `generate-jwt-hs256-server-token` command or
+# provided by an administrator of the cachepot cluster.
+token = &quot;my server's token&quot;
+</code></pre>
+<p>Due to <code>bubblewrap</code> requirements currently the build server <em>must</em> be run as root. Start the build server by running:</p>
+<pre><code class="language-toml">sudo cachepot-dist server --config server.conf
+</code></pre>
+<p>As with the scheduler, if the build server fails to start you may need to set <code>RUST_LOG=trace</code> to get useful diagnostics. (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<h2 id="configure-a-client-1"><a class="header" href="#configure-a-client-1">Configure a client</a></h2>
+<p>A client uses <code>cachepot</code> to wrap compile commands, communicates with the scheduler to find available build servers, and communicates with build servers to execute the compiles and receive the results.</p>
+<p>Clients that are not targeting linux64 require the <code>icecc-create-env</code> script or should be provided with an archive. <code>icecc-create-env</code> is part of <code>icecream</code> for packaging toolchains. You can install icecream to get this script (<code>apt install icecc</code> on Ubuntu), or download it from the git repository and place it in your <code>PATH</code>: <code>curl https://raw.githubusercontent.com/icecc/icecream/master/client/icecc-create-env.in &gt; icecc-create-env &amp;&amp; chmod +x icecc-create-env</code>. See <a href="dist/quickstart.html#using-custom-toolchains">using custom toolchains</a>.</p>
+<p>Create a client config file in <code>~/.config/cachepot/config</code> (on Linux), <code>~/Library/Application Support/Parity.cachepot/config</code> (on macOS), or <code>%APPDATA%\Parity\cachepot\config\config</code> (on Windows). A minimal example looks like:</p>
+<pre><code class="language-toml">[dist]
+# The URL used to connect to the scheduler (should use https, given an ideal
+# setup of a HTTPS server in front of the scheduler)
+scheduler_url = &quot;https://192.168.1.1&quot;
+# Used for mapping local toolchains to remote cross-compile toolchains. Empty in
+# this example where the client and build server are both Linux.
+toolchains = []
+# Size of the local toolchain cache, in bytes (5GB here, 10GB if unspecified).
+toolchain_cache_size = 5368709120
+
+[dist.auth]
+type = &quot;token&quot;
+# This should match the `client_auth` section of the scheduler config.
+token = &quot;my client token&quot;
+</code></pre>
+<p>Clients using Mozilla build servers should configure their <code>dist.auth</code> section as follows:</p>
+<pre><code class="language-toml">[dist.auth]
+type = &quot;mozilla&quot;
+</code></pre>
+<p>And retrieve a token from the Mozilla identity service by running <code>cachepot --dist-auth</code>
+and following the instructions. Completing this process will retrieve and cache a token
+valid for 7 days.</p>
+<p>Make sure to run <code>cachepot --stop-server</code> and <code>cachepot --start-server</code> if cachepot was
+running before changing the configuration.</p>
+<p>You can check the status with <code>cachepot --dist-status</code>, it should say something like:</p>
+<pre><code class="language-toml">$ cachepot --dist-status
+{&quot;SchedulerStatus&quot;:[&quot;https://cachepot1.corpdmz.ber3.mozilla.com/&quot;,{&quot;num_servers&quot;:3,&quot;num_cpus&quot;:56,&quot;in_progress&quot;:24}]}
+</code></pre>
+<p>For diagnostics, advice for scheduler/server does not work with <code>RUSTC_WRAPPER</code>. Therefore following approach is advised: <code>CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build</code>.</p>
+<h3 id="using-custom-toolchains-1"><a class="header" href="#using-custom-toolchains-1">Using custom toolchains</a></h3>
+<p>Since Windows and macOS cannot automatically package toolchains, it is important to be
+able to manually specify toolchains for distribution. This functionality is also available
+on Linux.</p>
+<p>Using custom toolchains involves adding a <code>dist.toolchains</code> section to your client config
+file (you can add it multiple times to specify multiple toolchains).</p>
+<p>On Linux and macOS:</p>
+<pre><code class="language-toml">[[dist.toolchains]]
+type = &quot;path_override&quot;
+compiler_executable = &quot;/home/me/.mozbuild/clang/bin/clang&quot;
+archive = &quot;/home/me/.mozbuild/toolchains/33d92fcd79ffef6e-clang-dist-toolchain.tar.xz&quot;
+archive_compiler_executable = &quot;/builds/worker/toolchains/clang/bin/clang&quot;
+</code></pre>
+<p>On Windows:</p>
+<pre><code class="language-toml">[[dist.toolchains]]
+type = &quot;path_override&quot;
+compiler_executable = &quot;C:/clang/bin\\clang-cl.exe&quot;
+archive = &quot;C:/toolchains/33d92fcd79ffef6e-clang-dist-toolchain.tar.xz&quot;
+archive_compiler_executable = &quot;/builds/worker/toolchains/clang/bin/clang&quot;
+</code></pre>
+<p>Where:</p>
+<ul>
+<li><code>compiler_executable</code> identifies the path that cachepot will match against to activate
+this configuration (you need to be careful on Windows - paths can have slashes in both
+directions, and you may need to escape backslashes, as in the example)</li>
+<li><code>archive</code> is the compressed tar archive containing the compiler toolchain to distribute
+when <code>compiler_executable</code> is matched</li>
+<li><code>archive_compiler_executable</code> is the path within the archive the distributed
+compilation should invoke</li>
+</ul>
+<p>A toolchain archive should be a Gzip compressed TAR archive, containing a filesystem
+sufficient to run the compiler without relying on any external files. If you have archives
+compatible with icecream (created with <code>icecc-create-env</code>, like
+<a href="https://github.com/jyavenard/mozilla-icecream">these ones</a> for macOS), they should also work
+with cachepot. To create a Windows toolchain, it is recommended that you download the <a href="http://releases.llvm.org/download.html">Clang
+binaries for Ubuntu 16.04</a> and extract them,
+package up the toolchain using the extracted <code>bin/clang</code> file (requires
+<a href="https://github.com/mozilla/sccache/pull/321">PR #321</a>) and then insert <code>bin/clang-cl</code> at
+the appropriate path as a symlink to the <code>bin/clang</code> binary.</p>
+<h2 id="considerations-when-distributing-from-macos-1"><a class="header" href="#considerations-when-distributing-from-macos-1">Considerations when distributing from macOS</a></h2>
+<p>When distributing from a macOS client, additional flags and configuration
+may be required:</p>
+<ul>
+<li>An explicit target should be passed to the compiler, for instance by adding
+<code>--target=x86_64-apple-darwin16.0.0</code> to your build system's <code>CFLAGS</code>.</li>
+<li>An explicit toolchain archive will need to be configured, as described above.
+In case rust is being cached, the same version of <code>rustc</code> will need to be used
+for local compiles as is found in the distributed archive.</li>
+<li>The client config will be read from <code>~/Library/Application Support/Parity.cachepot/config</code>,
+not <code>~/.config/cachepot/config</code>.</li>
+<li>Some cross compilers may not understand some intrinsics used in more recent macOS
+SDKs. The 10.11 SDK is known to work.</li>
+</ul>
+<h2 id="making-a-build-server-start-at-boot-time-1"><a class="header" href="#making-a-build-server-start-at-boot-time-1">Making a build server start at boot time</a></h2>
+<p>It is very easy with a systemd service to spawn the server on boot.</p>
+<p>You can create a service file like <code>/etc/systemd/system/cachepot-server.service</code>
+with the following contents:</p>
+<pre><code class="language-toml">[Unit]
+Description=cachepot-dist server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/path/to/cachepot-dist server --config /path/to/server.conf
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p><strong>Note</strong> that if the <code>cachepot-dist</code> binary is in a user's home directory, and
+you're in a distro with SELinux enabled (like Fedora), you may need to use an
+<code>ExecStart</code> line like:</p>
+<pre><code class="language-toml">ExecStart=/bin/bash -c &quot;/home/&lt;user&gt;/path/to/cachepot-dist server --config /home/&lt;user&gt;/path/to/server.conf&quot;
+</code></pre>
+<p>This is because SELinux by default prevents services from running binaries in
+home directories, for some reason. Using a shell works around that. An
+alternative would be to move the <code>cachepot-dist</code> binary to somewhere like
+<code>/usr/local/bin</code>, but then you need to remember to update it manually.</p>
+<p>After creating that file, you can ensure it's working and enable it by default
+like:</p>
+<pre><code class="language-sh">systemctl daemon-reload
+systemctl start cachepot-server
+systemctl status # And check it's fine.
+systemctl enable cachepot-server # This enables the service on boot
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="integration-with-gitlab"><a class="header" href="#integration-with-gitlab">integration with gitlab</a></h1>
+<p>Compilation outputs (stdout, stderr)</p>
+<p>Compilation outputs allow attackers to leak data from inside of the execution environment. This also applies the <code>cachepot server</code> provided sandbox
+and as such nothing of the CI environment should be deemed <code>s3cr1t</code>.</p>
+<p>As the way <code>cachepot client</code> works, is that it's provided to <code>cargo</code> via <code>RUSTC_WRAPPER=cachepot</code>, therefore compilations will be executed on cachepot-dist server, but <code>build.rs</code> and invocations with uncachable elements are still being run on the client on the gitlab runner's executor.
+As such, the security concerns for the <code>gitlab</code> worker are still to be kept high!</p>
+<p><code>cachepot-dist server</code> and <code>cachepot-dist scheduler</code> is a distinct service, therefore can run on another machine/instance.</p>
+<h2 id="interaction-graph"><a class="header" href="#interaction-graph">Interaction Graph</a></h2>
+<pre><code class="language-raw">             +----------------------+
+             |                      |
+             |  +-----------------+ |
+             |  |                 | |
+             |  | parsing ci.yml  | |
+             |  |                 | |
+             |  +-----------------+ |
+             |                      |
+             | &lt;instance&gt;.gitlab.io |
+             +----------+-----------+
+                        |
+                        |
+                        |
+                        |
+                        |
+                        v
++-----------------------+---------------------------+
+|                                                   |   (In future we may
+| +-(always-fresh container) execution-of-CI/CD--+  |   consider option
+| |                                              |  |   ofcachepot client
+| |                                              |  |   connecting from
+| |          1st. fetch dependencies             |  |   employees machines)
+| |                                              |  |
+| | +---------------(optional)-----------------+ |  |
+| | |       (restricting to be considered)     | |  |   here only &quot;get&quot;/&quot;read&quot; ACL
+| | | 2. cargo build without internet access   | |  |    to cache
+| | |                                          | |  |             as this container
+| | | except for                            &lt;------------&lt;-----+  may be modified
+| | | cachepot client &lt;-&gt; scheduler, server    | |  |          |  by
+| | |      ^                     ^  cache &quot;get&quot;| |  |          |  gitlab-ci.yml
+| | +------------------------------------------+ |  |          |  build.rs
+| |        |                     |               |  |          |  proc-macros
+| +----------------------------------------------+  |          |
+|          |                     |                  |          |
+|          |    gitlab runner    |                  |          ^
+|          |                     |                  |          |
++---------------------------------------------------+          |
+           |                     |                             |
+           |                     |                             |
+           |                     |                             |
+           |                     |                             |
+           |                     v                             ^
+           |                +----+---------------+          get|
+           |                |                    |             |
+           |                | cachepot scheduler |             |
+           |                |                    |     +-------+---------+
+           |                +---+----------------+     |                 |
+           |                    ^                      |                 |
+           |                    |                      | s3-like cache   |
+           |                    |                      |                 |
+           |                    |                      |                 |
+           v                    v                      |                 |
++----------+--------------------+--------+             +-----------------+
+|                                        |
+|                                        |                   put,get
+|         container/sandbox              |                     ^
+|   +---------(bubblewrap)--------+      |                     |
+|   |(no internet,very restricted)|      |                     |
+|   |                             |      |                     |
+|   |                             |      |                     |
+|   |    rustc etc.               |      |                     |
+|   |                             |      |                     |
+|   |                             |      |                     |
+|   |                             |      |                     |
+|   +-----------------------------+      |                     |
+|                                        |                     |
+|                                        +&lt;--------------------+
+|  cachepot server                       |
+|                                        |
+|                                        |
++----------------------------------------+
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="cachepot-on-jenkins"><a class="header" href="#cachepot-on-jenkins">cachepot on Jenkins</a></h1>
+<p>When using <code>cachepot</code> on <a href="https://jenkins.io">Jenkins</a> one has to know about how to deal with the cachepot server process.
+Unless specified otherwise, cachepot uses port <code>4226</code>. On invocation, cachepot tries to connect to a cachepot server
+instance on this port. If no server is running, a new instance is spawned. Jenkins tries to kill <em>all</em> spawned processes
+once a job is finished.  This results in broken builds when two run in parallel and the first one who spawned the server
+is finished and the server is killed. The other job way be in contact with the server (e.g waiting for a cache response)
+and fail.</p>
+<p>One option to solve this problem is to spawn a always running cachepot server process by setting <code>CACHEPOT_IDLE_TIMEOUT</code>
+to <code>0</code> and start the server beside Jenkins as a system service. This implies that all jobs use the same cachepot
+configuration and share the statistics.</p>
+<p>If a per-jobs cachepot configuration is needed or preferred (e.g place a local disc cache in <code>$WORKSPACE</code>) the Port
+allocator plugin does a good job. It assigns a free and
+unique port number to a job by exporting a variable. Naming this variable <code>CACHEPOT_SERVER_PORT</code> is enough to make the
+job spawn it's own cachepot server that is save to terminate upon job termination. This approach has the advantage that
+each job (with a dedicated server instance) maintains it's own statistics that might be interesting upon job
+finalization.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="concourseci"><a class="header" href="#concourseci">concourse.ci</a></h1>
+<blockquote>
+<p>TODO</p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="notation"><a class="header" href="#notation">notation</a></h1>
+<blockquote>
+<p>TODO</p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="notation-1"><a class="header" href="#notation-1">notation</a></h1>
+<blockquote>
+<p>TODO</p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="threat-model"><a class="header" href="#threat-model">Threat model</a></h1>
+<p>By definition, PRs can contain arbitrary code.
+With the rust ecosystem it's common to have custom code
+in the form of <code>proc_macro</code>s being run as part of
+the compilation process. As a consequence,
+there must be measures taken to avoid fallout.</p>
+<h2 id="assumptions"><a class="header" href="#assumptions">Assumptions</a></h2>
+<p>A single rust invocation does <em>not</em> require any kind of internet access.
+This precludes any <code>proc_macro</code>s that implement and web or socket based queries
+from working with <code>cachepot</code>.</p>
+<h2 id="goals"><a class="header" href="#goals">Goals</a></h2>
+<p>make the build server to securely and fast provide build artifacts, if possible increase the possibility of caching computations with security precautions.
+The goal of cachepot is to provide a secure compilation and artifact caching system, where a set of inputs is derived from a compiler invocation (i.e. rustc) and computed on the remote worker. The crucial part here is to provide a robust mapping from those input sets to cached compile artifacts in an efficient manner.</p>
+<h3 id="guarantees"><a class="header" href="#guarantees">Guarantees</a></h3>
+<p>For a given set of inputs, user should get the appropriate cached artifact that was created by an equivalent commandlind invocation of the compiler minus some path prefix changes.</p>
+<h3 id="sandbox"><a class="header" href="#sandbox">Sandbox</a></h3>
+<p>The <code>rustc</code> invocation on the <code>cachepot server</code> must never have access to the host environment or storage.</p>
+<h4 id="current"><a class="header" href="#current">Current</a></h4>
+<p>Built-in support for <code>bubblewrap</code> (with the binary <code>bwrap</code>) and <code>docker</code>.
+<code>bubblewrap</code> is the prefered choice.</p>
+<h4 id="hardening"><a class="header" href="#hardening">Hardening</a></h4>
+<p>Future considerations include adding a <code>KVM</code> based sandboxing for further hardening i.e. <a href="https://github.com/QuarkContainer/Quark">Quark</a>, <a href="https://katacontainers.io/">katacontainers</a>, or <a href="https://github.com/firecracker-microvm/firecracker">firecracker</a></p>
+<h3 id="cache-poisoning"><a class="header" href="#cache-poisoning">Cache poisoning</a></h3>
+<p>Independence between compiler invocation, such that no invocation of a (potentially malicious) invocation
+can lead to delivering incorrect artifacts.
+It must be impossible to modify existing artifacts.</p>
+<h4 id="current-1"><a class="header" href="#current-1">Current</a></h4>
+<blockquote>
+<p>TODO</p>
+</blockquote>
+<h4 id="hardening-1"><a class="header" href="#hardening-1">Hardening</a></h4>
+<p>Assure the hash is verified on the server side, such that the client has no power over the hash calculation.</p>
+<blockquote>
+<p>TODO</p>
+</blockquote>
+<h3 id="container-poisoning"><a class="header" href="#container-poisoning">Container poisoning</a></h3>
+<p>Proper measures should be introduced to prevent containers to be poisoned between runs.</p>
+<h4 id="current-measure"><a class="header" href="#current-measure">Current Measure</a></h4>
+<p>Use overlay fs with bubblewarp or and ephemeral containers with docker.
+Containers as such or their storage are never re-used.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="roadmap"><a class="header" href="#roadmap">roadmap</a></h1>
+<p>While we attempt to upstream as much as possible back to <code>sccache</code>, there is no guarantee
+that the changes we make are also appropriate for the upstream which is used for the
+<code>firefox</code> builds and might have different requirements.</p>
+<h2 id="priorities"><a class="header" href="#priorities">Priorities</a></h2>
+<ol>
+<li>Linux x86-64 first</li>
+<li>Make <code>paritytech/substrate</code> and <code>paritytech/polkadot</code> work</li>
+<li>Investigate performance bottlenecks</li>
+<li>Implement additional security layers</li>
+</ol>
+<h3 id="linux-x86-64-first"><a class="header" href="#linux-x86-64-first">Linux x86-64 first</a></h3>
+<p>Most machines running as servers are x86_64 Linux machines today. Clients might be Mac or Windows.
+We are focusing on Linux at the beginning and try to not break the existing support for Mac and Windows
+on the client side. The server side will stay x86_64 Linux only, cross compilation is supported by (cross
+-)toolchains.</p>
+<h3 id="performance-bottlenecks"><a class="header" href="#performance-bottlenecks">Performance Bottlenecks</a></h3>
+<p>The lookup keys are based on hashes includes timestamps and paths, as such re-usability of cache vars is very limited.
+This is a performance limitation, since the cache is ultimately not shared.
+There are of course various other performance topics that will be addressed but are not necessarily
+part of this priority item.</p>
+<h3 id="additional-security-layers"><a class="header" href="#additional-security-layers">Additional Security layers</a></h3>
+<p>The biggest topic that has yet to be specified in detail, is the introduction
+of multi layer caches, with different trust levels. I.e. a CI cluster could
+warm caches every night with trusted storage. These could then be used
+to fetch artifacts combined with a per-user cache for local repeated compiles.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="available-configuration-options"><a class="header" href="#available-configuration-options">Available Configuration Options</a></h1>
+<h2 id="file"><a class="header" href="#file">file</a></h2>
+<pre><code class="language-toml">[dist]
+# where to find the scheduler
+scheduler_url = &quot;http://1.2.3.4:10600&quot;
+# a set of prepackaged toolchains
+toolchains = []
+# the maximum size of the toolchain cache in bytes
+toolchain_cache_size = 5368709120
+cache_dir = &quot;/home/user/.cache/cachepot-dist-client&quot;
+
+[dist.auth]
+type = &quot;token&quot;
+token = &quot;secrettoken&quot;
+
+
+#[cache.azure]
+# does not work as it appears
+
+[cache.disk]
+dir = &quot;/tmp/.cache/cachepot&quot;
+size = 7516192768 # 7 GiBytes
+
+[cache.gcs]
+# optional url
+url = &quot;...&quot;
+rw_mode = &quot;READ_ONLY&quot;
+# rw_mode = &quot;READ_WRITE&quot;
+cred_path = &quot;/psst/secret/cred&quot;
+bucket = &quot;bucket&quot;
+
+[cache.memcached]
+url = &quot;...&quot;
+
+[cache.redis]
+url = &quot;redis://user:passwd@1.2.3.4:6379/1&quot;
+
+[cache.s3]
+bucket = &quot;name&quot;
+endpoint = &quot;s3-us-east-1.amazonaws.com&quot;
+use_ssl = true
+</code></pre>
+<h2 id="env"><a class="header" href="#env">env</a></h2>
+<p>Whatever is set by a file based configuration, it is overruled by the env
+configuration variables</p>
+<h3 id="misc"><a class="header" href="#misc">misc</a></h3>
+<ul>
+<li><code>CACHEPOT_ALLOW_CORE_DUMPS</code> to enable core dumps by the server</li>
+<li><code>CACHEPOT_CONF</code> configuration file path</li>
+<li><code>CACHEPOT_CACHED_CONF</code></li>
+<li><code>CACHEPOT_IDLE_TIMEOUT</code> how long the local daemon process waits for more client requests before exiting</li>
+<li><code>CACHEPOT_STARTUP_NOTIFY</code> specify a path to a socket which will be used for server completion notification</li>
+<li><code>CACHEPOT_MAX_FRAME_LENGTH</code> how much data can be transfered between client and server</li>
+<li><code>CACHEPOT_NO_DAEMON</code> set to <code>1</code> to disable putting the server to the background</li>
+</ul>
+<h3 id="cache-configs"><a class="header" href="#cache-configs">cache configs</a></h3>
+<h4 id="disk"><a class="header" href="#disk">disk</a></h4>
+<ul>
+<li><code>CACHEPOT_DIR</code> local on disk artifact cache directory</li>
+<li><code>CACHEPOT_CACHE_SIZE</code> maximum size of the local on disk cache i.e. <code>10G</code></li>
+</ul>
+<h4 id="s3-compatible"><a class="header" href="#s3-compatible">s3 compatible</a></h4>
+<ul>
+<li><code>CACHEPOT_BUCKET</code> s3 bucket to be used</li>
+<li><code>CACHEPOT_ENDPOINT</code> s3 endpoint</li>
+<li><code>CACHEPOT_REGION</code> s3 region</li>
+<li><code>CACHEPOT_S3_USE_SSL</code> s3 endpoint requires TLS, set this to <code>true</code></li>
+</ul>
+<p>The endpoint used then becomes <code>${CACHEPOT_BUCKET}.s3-{CACHEPOT_REGION}.amazonaws.com</code>.
+If <code>CACHEPOT_REGION</code> is undefined, it will default to <code>us-east-1</code>.</p>
+<h4 id="redis"><a class="header" href="#redis">redis</a></h4>
+<ul>
+<li><code>CACHEPOT_REDIS</code> full redis url, including auth and access token/passwd</li>
+</ul>
+<p>The full url appears then as <code>redis://user:passwd@1.2.3.4:6379/1</code>.</p>
+<h4 id="memcached"><a class="header" href="#memcached">memcached</a></h4>
+<ul>
+<li><code>CACHEPOT_MEMCACHED</code> memcached url</li>
+</ul>
+<h4 id="gcs"><a class="header" href="#gcs">gcs</a></h4>
+<ul>
+<li><code>CACHEPOT_GCS_BUCKET</code></li>
+<li><code>CACHEPOT_GCS_CREDENTIALS_URL</code></li>
+<li><code>CACHEPOT_GCS_KEY_PATH</code></li>
+<li><code>CACHEPOT_GCS_RW_MODE</code></li>
+</ul>
+<h4 id="azure"><a class="header" href="#azure">azure</a></h4>
+<ul>
+<li><code>CACHEPOT_AZURE_CONNECTION_STRING</code></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="faq"><a class="header" href="#faq">FAQ</a></h1>
+<p>Q: Why not <a href="https://bazel.build">bazel</a>?
+A: Bazel makes a few very opinionated assumptions such as hermetic builds being a given, which is a good property in general but non-trivial to achieve for now. There is another issue regarding the fact that bazel is very dominant. It assumes it’s the entry tool and we want to stick with cargo while maintaining the option to plug in sccache/cachepot.</p>
+<p>Q: Why not <a href="https://github.com/buildbarn">buildbarn</a>?
+A: It is the backend caching infra for bazel.</p>
+<p>Q: Why not <a href="https://github.com/iqlusioninc/synchronicity">synchronicty</a>?
+A: It’s in a very early, experimental stage and uses components with low activity and low community involvement.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                        
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                            </nav>
+
+        </div>
+
+        
+        
+                <script type="text/javascript">
+            window.playground_line_numbers = true;
+        </script>
+        
+                <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+                <script src="ace.js" type="text/javascript" charset="utf-8"></script>
+        <script src="editor.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mode-rust.js" type="text/javascript" charset="utf-8"></script>
+        <script src="theme-dawn.js" type="text/javascript" charset="utf-8"></script>
+        <script src="theme-tomorrow_night.js" type="text/javascript" charset="utf-8"></script>
+        
+                <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+                <script type="text/javascript" src="mermaid.min.js"></script>
+                <script type="text/javascript" src="mermaid-init.js"></script>
+        
+                        <script type="text/javascript">
+        window.addEventListener('load', function() {
+            MathJax.Hub.Register.StartupHook('End', function() {
+                window.setTimeout(window.print, 100);
+            });
+        });
+        </script>
+                
+    </body>
+</html>
