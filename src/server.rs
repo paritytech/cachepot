@@ -137,7 +137,7 @@ fn get_signal(_status: ExitStatus) -> i32 {
 pub struct DistClientContainer {
     // The actual dist client state
     #[cfg(feature = "dist-client")]
-    state: Mutex<DistClientState>,
+    state: futures::lock::Mutex<DistClientState>,
 }
 
 #[cfg(feature = "dist-client")]
@@ -159,8 +159,11 @@ enum DistClientState {
     #[cfg(feature = "dist-client")]
     Some(Box<DistClientConfig>, Arc<dyn dist::Client>),
     #[cfg(feature = "dist-client")]
+    /// Initialization failed and will not be attempted again.
+    /// Includes a user-facing error.
     FailWithMessage(Box<DistClientConfig>, String),
     #[cfg(feature = "dist-client")]
+    /// Initialization will be attempted again at a specified `Instant`.
     RetryCreateAt(Box<DistClientConfig>, Instant),
     Disabled,
 }
@@ -185,7 +188,7 @@ impl DistClientContainer {
         DistInfo::Disabled("dist-client feature not selected".to_string())
     }
 
-    fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
+    async fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
         Ok(None)
     }
 }
@@ -202,110 +205,108 @@ impl DistClientContainer {
             toolchains: config.dist.toolchains.clone(),
             rewrite_includes_only: config.dist.rewrite_includes_only,
         };
-        let state = Self::create_state(config);
+        let state = Self::create_state(Box::new(config));
+        let state = pool.block_on(state);
         Self {
-            state: Mutex::new(state),
+            state: futures::lock::Mutex::new(state),
         }
     }
 
     pub fn new_disabled() -> Self {
         Self {
-            state: Mutex::new(DistClientState::Disabled),
+            state: futures::lock::Mutex::new(DistClientState::Disabled),
         }
     }
 
-    pub fn reset_state(&self) {
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
+    pub async fn reset_state(&self) {
+        // NOTE: The guard lock is not held across any yield point so this does
+        // not contribute to a possible deadlock
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
         match mem::replace(state, DistClientState::Disabled) {
             DistClientState::Some(cfg, _)
             | DistClientState::FailWithMessage(cfg, _)
             | DistClientState::RetryCreateAt(cfg, _) => {
                 warn!("State reset. Will recreate");
-                *state =
-                    DistClientState::RetryCreateAt(cfg, Instant::now() - Duration::from_secs(1));
+                *state = DistClientState::RetryCreateAt(cfg, Instant::now());
             }
             DistClientState::Disabled => (),
         }
     }
 
-    pub fn get_status(&self) -> impl Future<Output = DistInfo> {
-        // This function can't be wholly async because we can't hold mutex guard
-        // across the yield point - instead, either return an immediately ready
-        // future or perform async query with the client cloned beforehand.
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
-        let (client, scheduler_url) = match state {
-            DistClientState::Disabled => {
-                return Either::Left(future::ready(DistInfo::Disabled("disabled".to_string())))
-            }
+    pub async fn get_status(&self) -> DistInfo {
+        // NOTE: The guard lock is not held across any yield point so this does
+        // not contribute to a possible deadlock
+        let guard = self.state.lock().await;
+        let (client, scheduler_url) = match &*guard {
+            DistClientState::Disabled => return DistInfo::Disabled("disabled".to_string()),
             DistClientState::FailWithMessage(cfg, _) => {
-                return Either::Left(future::ready(DistInfo::NotConnected(
+                return DistInfo::NotConnected(
                     cfg.scheduler_url.clone(),
                     "enabled, auth not configured".to_string(),
-                )))
+                )
             }
             DistClientState::RetryCreateAt(cfg, _) => {
-                return Either::Left(future::ready(DistInfo::NotConnected(
+                return DistInfo::NotConnected(
                     cfg.scheduler_url.clone(),
                     "enabled, not connected, will retry".to_string(),
-                )))
+                )
             }
             DistClientState::Some(cfg, client) => (Arc::clone(client), cfg.scheduler_url.clone()),
         };
+        drop(guard);
 
-        Either::Right(Box::pin(async move {
-            match client.do_get_status().await {
-                Ok(res) => DistInfo::SchedulerStatus(scheduler_url.clone(), res),
-                Err(_) => DistInfo::NotConnected(
-                    scheduler_url.clone(),
-                    "could not communicate with scheduler".to_string(),
-                ),
-            }
-        }))
-    }
-
-    fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
-        let mut guard = self.state.lock();
-        let state = guard.as_mut().unwrap();
-        let state: &mut DistClientState = &mut **state;
-        Self::maybe_recreate_state(state);
-        let res = match state {
-            DistClientState::Some(_, dc) => Ok(Some(dc.clone())),
-            DistClientState::Disabled | DistClientState::RetryCreateAt(_, _) => Ok(None),
-            DistClientState::FailWithMessage(_, msg) => Err(anyhow!(msg.clone())),
-        };
-        if res.is_err() {
-            let config = match mem::replace(state, DistClientState::Disabled) {
-                DistClientState::FailWithMessage(config, _) => config,
-                _ => unreachable!(),
-            };
-            // The client is most likely mis-configured, make sure we
-            // re-create on our next attempt.
-            *state =
-                DistClientState::RetryCreateAt(config, Instant::now() - Duration::from_secs(1));
+        match client.do_get_status().await {
+            Ok(res) => DistInfo::SchedulerStatus(scheduler_url, res),
+            Err(_) => DistInfo::NotConnected(
+                scheduler_url,
+                "could not communicate with scheduler".to_string(),
+            ),
         }
-        res
     }
 
-    fn maybe_recreate_state(state: &mut DistClientState) {
-        if let DistClientState::RetryCreateAt(_, instant) = *state {
-            if instant > Instant::now() {
-                return;
+    async fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
+        // NOTE: The guard lock *is* held across a yield point - we potentially
+        // await when constructing a new dist client. However, other functions
+        // that lock the state (`get_status` and `reset_state`) finish
+        // immediately, so deadlocking caused by multiple tasks waiting on the
+        // state is not possible.
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+        // Attempt to recreate the client if we scheduled that before
+        match *state {
+            DistClientState::RetryCreateAt(_, instant) if instant <= Instant::now() => {
+                // Move out the boxed config to re-use it when re-creating state
+                let config = match mem::replace(state, DistClientState::Disabled) {
+                    DistClientState::RetryCreateAt(config, _) => config,
+                    _ => unreachable!("just checked above"),
+                };
+                info!("Attempting to recreate the dist client");
+                *state = Self::create_state(config).await
             }
-            let config = match mem::replace(state, DistClientState::Disabled) {
-                DistClientState::RetryCreateAt(config, _) => config,
-                _ => unreachable!(),
-            };
-            info!("Attempting to recreate the dist client");
-            *state = Self::create_state(*config)
+            _ => (),
+        }
+
+        match *state {
+            DistClientState::FailWithMessage(_, _) => {
+                // Move out the boxed config to re-use it when re-creating state
+                let (config, msg) = match mem::replace(state, DistClientState::Disabled) {
+                    DistClientState::FailWithMessage(config, msg) => (config, msg),
+                    _ => unreachable!("just checked above"),
+                };
+                // The client is most likely mis-configured, make sure we
+                // re-create on our next attempt.
+                *state = DistClientState::RetryCreateAt(config, Instant::now());
+
+                Err(anyhow!(msg))
+            }
+            DistClientState::Some(_, ref dc) => Ok(Some(Arc::clone(dc))),
+            DistClientState::Disabled | DistClientState::RetryCreateAt(_, _) => Ok(None),
         }
     }
 
     // Attempt to recreate the dist client
-    fn create_state(config: DistClientConfig) -> DistClientState {
+    async fn create_state(config: Box<DistClientConfig>) -> DistClientState {
         macro_rules! try_or_retry_later {
             ($v:expr) => {{
                 match $v {
@@ -314,7 +315,7 @@ impl DistClientContainer {
                         // `{:?}` prints the full cause chain and backtrace.
                         error!("{:?}", e);
                         return DistClientState::RetryCreateAt(
-                            Box::new(config),
+                            config,
                             Instant::now() + DIST_CLIENT_RECREATE_TIMEOUT,
                         );
                     }
@@ -330,10 +331,7 @@ impl DistClientContainer {
                         // `{:?}` prints the full cause chain and backtrace.
                         let errmsg = format!("{:?}", e);
                         error!("{}", errmsg);
-                        return DistClientState::FailWithMessage(
-                            Box::new(config),
-                            errmsg.to_string(),
-                        );
+                        return DistClientState::FailWithMessage(config, errmsg.to_string());
                     }
                 }
             }};
@@ -348,9 +346,10 @@ impl DistClientContainer {
                     | config::DistAuth::Oauth2Implicit { auth_url, .. } => {
                         Self::get_cached_config_auth_token(auth_url)
                     }
-                };
-                let auth_token = try_or_fail_with_message!(auth_token
-                    .context("could not load client auth token, run |cachepot --dist-auth|"));
+                }
+                .context("could not load client auth token, run |cachepot --dist-auth|");
+                let auth_token = try_or_fail_with_message!(auth_token);
+
                 let dist_client = dist::http::Client::new(
                     &config.pool,
                     url,
@@ -359,22 +358,23 @@ impl DistClientContainer {
                     &config.toolchains,
                     auth_token,
                     config.rewrite_includes_only,
-                );
-                let dist_client =
-                    try_or_retry_later!(dist_client.context("failure during dist client creation"));
+                )
+                .context("failure during dist client creation");
+                let dist_client = try_or_retry_later!(dist_client);
+
                 use crate::dist::Client;
-                match config.pool.block_on(dist_client.do_get_status()) {
+                match dist_client.do_get_status().await {
                     Ok(res) => {
                         info!(
                             "Successfully created dist client with {:?} cores across {:?} servers",
                             res.num_cpus, res.num_servers
                         );
-                        DistClientState::Some(Box::new(config), Arc::new(dist_client))
+                        DistClientState::Some(config, Arc::new(dist_client))
                     }
                     Err(_) => {
                         warn!("Scheduler address configured, but could not communicate with scheduler");
                         DistClientState::RetryCreateAt(
-                            Box::new(config),
+                            config,
                             Instant::now() + DIST_CLIENT_RECREATE_TIMEOUT,
                         )
                     }
@@ -920,7 +920,7 @@ where
             }
         };
 
-        let dist_info = match me1.dist_client.get_client() {
+        let dist_info = match me1.dist_client.get_client().await {
             Ok(Some(ref client)) => {
                 if let Some(archive) = client.get_custom_toolchain(&resolved_compiler_path) {
                     match metadata(&archive)
@@ -1095,12 +1095,12 @@ where
         let color_mode = hasher.color_mode();
         let me = self.clone();
         let kind = compiler.kind();
-        let dist_client = self.dist_client.get_client();
         let creator = self.creator.clone();
         let storage = self.storage.clone();
         let pool = self.rt.clone();
 
         let task = async move {
+            let dist_client = me.dist_client.get_client().await;
             let result = match dist_client {
                 Ok(client) => {
                     hasher
@@ -1197,7 +1197,7 @@ where
                         }
                         Err(err) => match err.downcast::<HttpClientError>() {
                             Ok(HttpClientError(msg)) => {
-                                me.dist_client.reset_state();
+                                me.dist_client.reset_state().await;
                                 let errmsg =
                                     format!("[{:?}] http error status: {}", out_pretty, msg);
                                 error!("{}", errmsg);
