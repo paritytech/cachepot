@@ -298,7 +298,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
   deploy-gh-pages:
     runs-on: ubuntu-20.04
 
