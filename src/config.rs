@@ -584,8 +584,16 @@ impl Config {
 
         let file_conf_path = config_file("CACHEPOT_CONF", "config");
         let file_conf = try_read_config_file(&file_conf_path)
-            .context("Failed to load config file")?
-            .unwrap_or_default();
+            .context("Failed to parse config file")?
+            .map(|config| {
+                info!("Parsed config file {} .", file_config_path.display());
+                config
+            })
+            .unwrap_or_else(|| {
+                info!("Using the default configuration.");
+                Default::default()
+            });;
+
 
         Ok(Config::from_env_and_file_configs(env_conf, file_conf))
     }
