@@ -586,7 +586,7 @@ impl Config {
         let file_conf = try_read_config_file(&file_conf_path)
             .context("Failed to parse config file")?
             .map(|config| {
-                info!("Parsed config file {} .", file_config_path.display());
+                info!("Parsed config file {} .", file_conf_path.display());
                 config
             })
             .unwrap_or_else(|| {
