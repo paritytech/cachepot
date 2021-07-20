@@ -219,6 +219,8 @@ impl DistClientContainer {
     }
 
     pub async fn reset_state(&self) {
+        // NOTE: The guard lock is not held across any yield point so this does
+        // not contribute to a possible deadlock
         let mut guard = self.state.lock().await;
         let state = &mut *guard;
         match mem::replace(state, DistClientState::Disabled) {
@@ -233,6 +235,8 @@ impl DistClientContainer {
     }
 
     pub async fn get_status(&self) -> DistInfo {
+        // NOTE: The guard lock is not held across any yield point so this does
+        // not contribute to a possible deadlock
         let guard = self.state.lock().await;
         let (client, scheduler_url) = match &*guard {
             DistClientState::Disabled => return DistInfo::Disabled("disabled".to_string()),
@@ -262,6 +266,11 @@ impl DistClientContainer {
     }
 
     async fn get_client(&self) -> Result<Option<Arc<dyn dist::Client>>> {
+        // NOTE: The guard lock *is* held across a yield point - we potentially
+        // await when constructing a new dist client. However, other functions
+        // that lock the state (`get_status` and `reset_state`) finish
+        // immediately, so deadlocking caused by multiple tasks waiting on the
+        // state is not possible.
         let mut guard = self.state.lock().await;
         let state = &mut *guard;
         // Attempt to recreate the client if we scheduled that before
