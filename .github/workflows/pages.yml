@@ -1,0 +1,48 @@
+name: pages
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows'
+      - 'docs/**'
+jobs:
+  deploy-gh-pages:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Clone cachepot repo
+      uses: actions/checkout@v2
+
+    - name: Use Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Setup mdbook
+      uses: peaceiris/actions-mdbook@v1
+      with:
+        mdbook-version: 'latest'
+
+    - name: Setup mdbook-linkcheck
+      run: |
+        cargo install mdbook-linkcheck
+
+    - name: Setup mdbook-graphviz
+      run: |
+        sudo apt install -y graphviz
+        cargo install mdbook-graphviz
+
+    - name: Setup mdbook-mermaid
+      run: |
+        cargo install mdbook-mermaid
+
+    - name: Build book.
+      run: |
+        mdbook build docs
+
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/book/html/
