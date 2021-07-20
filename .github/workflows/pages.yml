@@ -39,10 +39,10 @@ jobs:
 
     - name: Build book.
       run: |
-        mdbook build docs
+        mdbook build docs/book
 
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: docs/book/html/
+        publish_dir: docs/book/book/html/
