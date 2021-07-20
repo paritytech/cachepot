@@ -17,7 +17,7 @@ use crate::client::connect_to_server;
 use crate::commands::{do_compile, request_shutdown, request_stats};
 use crate::jobserver::Client;
 use crate::mock_command::*;
-use crate::server::{DistClientContainer, SccacheServer, ServerMessage};
+use crate::server::{CachepotServer, DistClientContainer, ServerMessage};
 use crate::test::utils::*;
 use crate::util::fs::File;
 use futures::channel::oneshot::{self, Sender};
@@ -79,8 +79,8 @@ where
         let storage = Arc::new(DiskCache::new(&cache_dir, cache_size, runtime.handle()));
 
         let client = unsafe { Client::new() };
-        let srv = SccacheServer::new(0, runtime, client, dist_client, storage).unwrap();
-        let mut srv: SccacheServer<Arc<Mutex<MockCommandCreator>>> = srv;
+        let srv = CachepotServer::new(0, runtime, client, dist_client, storage).unwrap();
+        let mut srv: CachepotServer<Arc<Mutex<MockCommandCreator>>> = srv;
         assert!(srv.port() > 0);
         if let Some(options) = options {
             if let Some(timeout) = options.idle_timeout {

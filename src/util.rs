@@ -196,7 +196,7 @@ where
 
 /// Run `command`, writing `input` to its stdin if it is `Some` and return the exit status and output.
 ///
-/// If the command returns a non-successful exit status, an error of `SccacheError::ProcessError`
+/// If the command returns a non-successful exit status, an error of `CachepotError::ProcessError`
 /// will be returned containing the process output.
 pub async fn run_input_output<C>(mut command: C, input: Option<Vec<u8>>) -> Result<process::Output>
 where
