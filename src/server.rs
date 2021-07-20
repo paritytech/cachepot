@@ -142,7 +142,7 @@ pub struct DistClientContainer {
 
 #[cfg(feature = "dist-client")]
 struct DistClientConfig {
-    // Reusable items tied to an SccacheServer instance
+    // Reusable items tied to an CachepotServer instance
     pool: tokio::runtime::Handle,
 
     // From the static dist configuration
@@ -411,7 +411,7 @@ pub fn start_server(config: &Config, port: u16) -> Result<()> {
     let dist_client = DistClientContainer::new(config, &pool);
     let storage = storage_from_config(config, &pool);
     let res =
-        SccacheServer::<ProcessCommandCreator>::new(port, runtime, client, dist_client, storage);
+        CachepotServer::<ProcessCommandCreator>::new(port, runtime, client, dist_client, storage);
     let notify = env::var_os("CACHEPOT_STARTUP_NOTIFY");
     match res {
         Ok(srv) => {
@@ -437,23 +437,23 @@ pub fn start_server(config: &Config, port: u16) -> Result<()> {
     }
 }
 
-pub struct SccacheServer<C: CommandCreatorSync> {
+pub struct CachepotServer<C: CommandCreatorSync> {
     runtime: Runtime,
     listener: TcpListener,
     rx: mpsc::Receiver<ServerMessage>,
     timeout: Duration,
-    service: SccacheService<C>,
+    service: CachepotService<C>,
     wait: WaitUntilZero,
 }
 
-impl<C: CommandCreatorSync> SccacheServer<C> {
+impl<C: CommandCreatorSync> CachepotServer<C> {
     pub fn new(
         port: u16,
         mut runtime: Runtime,
         client: Client,
         dist_client: DistClientContainer,
         storage: Arc<dyn Storage>,
-    ) -> Result<SccacheServer<C>> {
+    ) -> Result<CachepotServer<C>> {
         let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
         let listener = runtime.block_on(TcpListener::bind(&SocketAddr::V4(addr)))?;
 
@@ -462,9 +462,9 @@ impl<C: CommandCreatorSync> SccacheServer<C> {
         let (tx, rx) = mpsc::channel(1);
         let (wait, info) = WaitUntilZero::new();
         let pool = runtime.handle().clone();
-        let service = SccacheService::new(dist_client, storage, &client, pool, tx, info);
+        let service = CachepotService::new(dist_client, storage, &client, pool, tx, info);
 
-        Ok(SccacheServer {
+        Ok(CachepotServer {
             runtime,
             listener,
             rx,
@@ -514,7 +514,7 @@ impl<C: CommandCreatorSync> SccacheServer<C> {
         F: Future,
         C: Send,
     {
-        let SccacheServer {
+        let CachepotServer {
             mut runtime,
             listener,
             rx,
@@ -585,7 +585,7 @@ impl<C: CommandCreatorSync> SccacheServer<C> {
         // Once our server has shut down either due to inactivity or a manual
         // request we still need to give a bit of time for all active
         // connections to finish. This `wait` future will resolve once all
-        // instances of `SccacheService` have been dropped.
+        // instances of `CachepotService` have been dropped.
         //
         // Note that we cap the amount of time this can take, however, as we
         // don't want to wait *too* long.
@@ -628,7 +628,7 @@ impl<C> CompilerCacheEntry<C> {
 }
 /// Service implementation for cachepot
 #[derive(Clone)]
-struct SccacheService<C>
+struct CachepotService<C>
 where
     C: Send,
 {
@@ -672,8 +672,8 @@ where
     info: ActiveInfo,
 }
 
-type SccacheRequest = Message<Request, Body<()>>;
-type SccacheResponse = Message<Response, Body<Response>>;
+type CachepotRequest = Message<Request, Body<()>>;
+type CachepotResponse = Message<Response, Body<Response>>;
 
 /// Messages sent from all services to the main event loop indicating activity.
 ///
@@ -687,15 +687,15 @@ pub enum ServerMessage {
     Shutdown,
 }
 
-impl<C> Service<SccacheRequest> for Arc<SccacheService<C>>
+impl<C> Service<CachepotRequest> for Arc<CachepotService<C>>
 where
     C: CommandCreatorSync + Send + Sync + 'static,
 {
-    type Response = SccacheResponse;
+    type Response = CachepotResponse;
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response>> + Send + 'static>>;
 
-    fn call(&mut self, req: SccacheRequest) -> Self::Future {
+    fn call(&mut self, req: CachepotRequest) -> Self::Future {
         trace!("handle_client");
 
         // Opportunistically let channel know that we've received a request. We
@@ -760,7 +760,7 @@ where
 use futures::future::Either;
 use futures::TryStreamExt;
 
-impl<C> SccacheService<C>
+impl<C> CachepotService<C>
 where
     C: CommandCreatorSync + Clone + Send + Sync + 'static,
 {
@@ -771,8 +771,8 @@ where
         rt: tokio::runtime::Handle,
         tx: mpsc::Sender<ServerMessage>,
         info: ActiveInfo,
-    ) -> SccacheService<C> {
-        SccacheService {
+    ) -> CachepotService<C> {
+        CachepotService {
             stats: Arc::new(RwLock::new(ServerStats::default())),
             dist_client: Arc::new(dist_client),
             storage,
@@ -799,7 +799,7 @@ where
         }
         let io = builder.new_framed(socket);
 
-        let (sink, stream) = SccacheTransport {
+        let (sink, stream) = CachepotTransport {
             inner: Framed::new(io.sink_err_into().err_into(), BincodeCodec),
         }
         .split();
@@ -857,7 +857,7 @@ where
     /// This will handle a compile request entirely, generating a response with
     /// the inital information and an optional body which will eventually
     /// contain the results of the compilation.
-    async fn handle_compile(&self, compile: Compile) -> Result<SccacheResponse> {
+    async fn handle_compile(&self, compile: Compile) -> Result<CachepotResponse> {
         let exe = compile.exe;
         let cmd = compile.args;
         let cwd: PathBuf = compile.cwd.into();
@@ -1024,7 +1024,7 @@ where
         cmd: Vec<OsString>,
         cwd: PathBuf,
         env_vars: Vec<(OsString, OsString)>,
-    ) -> SccacheResponse {
+    ) -> CachepotResponse {
         let mut stats = self.stats.write().await;
         match compiler {
             Err(e) => {
@@ -1645,7 +1645,7 @@ where
 ///   `Sink` implementation to switch from `BytesMut` to `Response` meaning that
 ///   all `Response` types pushed in will be converted to `BytesMut` and pushed
 ///   below.
-struct SccacheTransport<I: AsyncRead + AsyncWrite + Unpin> {
+struct CachepotTransport<I: AsyncRead + AsyncWrite + Unpin> {
     inner: Framed<
         futures::stream::ErrInto<
             futures::sink::SinkErrInto<
@@ -1661,7 +1661,7 @@ struct SccacheTransport<I: AsyncRead + AsyncWrite + Unpin> {
     >,
 }
 
-impl<I: AsyncRead + AsyncWrite + Unpin> Stream for SccacheTransport<I> {
+impl<I: AsyncRead + AsyncWrite + Unpin> Stream for CachepotTransport<I> {
     type Item = Result<Message<Request, Body<()>>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -1671,7 +1671,7 @@ impl<I: AsyncRead + AsyncWrite + Unpin> Stream for SccacheTransport<I> {
     }
 }
 
-impl<I: AsyncRead + AsyncWrite + Unpin> Sink<Frame<Response, Response>> for SccacheTransport<I> {
+impl<I: AsyncRead + AsyncWrite + Unpin> Sink<Frame<Response, Response>> for CachepotTransport<I> {
     type Error = Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {

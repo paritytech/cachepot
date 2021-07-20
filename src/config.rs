@@ -592,8 +592,7 @@ impl Config {
             .unwrap_or_else(|| {
                 info!("Using the default configuration.");
                 Default::default()
-            });;
-
+            });
 
         Ok(Config::from_env_and_file_configs(env_conf, file_conf))
     }
