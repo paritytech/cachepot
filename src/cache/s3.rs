@@ -13,48 +13,93 @@
 // limitations under the License.
 
 use crate::cache::{Cache, CacheRead, CacheWrite, Storage};
-use crate::simples3::{
-    AutoRefreshingProvider, Bucket, ChainProvider, ProfileProvider, ProvideAwsCredentials, Ssl,
-};
-use directories::UserDirs;
+use hyperx::header::CacheDirective;
+use rusoto_core::{self, Client, HttpClient, Region};
+use rusoto_s3::{GetObjectOutput, GetObjectRequest, PutObjectRequest, S3Client, S3 as _};
 use std::io;
-use std::sync::Arc;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
+use tokio::io::AsyncReadExt as _;
 
 use crate::errors::*;
 
 /// A cache that stores entries in Amazon S3.
 pub struct S3Cache {
-    /// The S3 bucket.
-    bucket: Arc<Bucket>,
-    /// Credentials provider.
-    provider: AutoRefreshingProvider<ChainProvider>,
+    /// The name of the bucket.
+    bucket_name: String,
+    /// The S3 client to be used for the Get and Put requests.
+    client: S3Client,
     /// Prefix to be used for bucket keys.
     key_prefix: String,
 }
 
 impl S3Cache {
     /// Create a new `S3Cache` storing data in `bucket`.
-    pub fn new(bucket: &str, endpoint: &str, use_ssl: bool, key_prefix: &str) -> Result<S3Cache> {
-        let user_dirs = UserDirs::new().context("Couldn't get user directories")?;
-        let home = user_dirs.home_dir();
+    pub fn new(
+        bucket: &str,
+        region: Option<&str>,
+        endpoint: Option<&str>,
+        key_prefix: &str,
+        public: bool,
+    ) -> Result<S3Cache> {
+        let region = match endpoint {
+            Some(endpoint) => Region::Custom {
+                name: region
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| Region::default().name().to_owned()),
+                endpoint: endpoint.to_owned(),
+            },
+            None => region
+                .map(FromStr::from_str)
+                .unwrap_or_else(|| Ok(Region::default()))?,
+        };
 
-        let profile_providers = vec![
-            ProfileProvider::with_configuration(home.join(".aws").join("credentials"), "default"),
-            //TODO: this is hacky, this is where our mac builders store their
-            // credentials. We should either match what boto does more directly
-            // or make those builders put their credentials in ~/.aws/credentials
-            ProfileProvider::with_configuration(home.join(".boto"), "Credentials"),
-        ];
-        let provider =
-            AutoRefreshingProvider::new(ChainProvider::with_profile_providers(profile_providers));
-        let ssl_mode = if use_ssl { Ssl::Yes } else { Ssl::No };
-        let bucket = Arc::new(Bucket::new(bucket, endpoint, ssl_mode)?);
+        //we could define our own Annonymous StaticProvider here, but we'd have to verify that the DefaultCredentialsProvider would fail first.
+        let client = if public {
+            let client = Client::new_not_signing(
+                HttpClient::new().expect("failed to create request dispatcher"),
+            );
+            S3Client::new_with_client(client, region)
+        } else {
+            S3Client::new(region)
+        };
+
         Ok(S3Cache {
-            bucket,
-            provider,
+            bucket_name: bucket.to_owned(),
+            client,
             key_prefix: key_prefix.to_owned(),
         })
+    }
+
+    async fn get_object(client: S3Client, request: GetObjectRequest) -> Result<Cache> {
+        let result = client.get_object(request).await;
+        match result {
+            Ok(output) => Self::read_object_output(output).await,
+            Err(rusoto_core::RusotoError::Service(rusoto_s3::GetObjectError::NoSuchKey(_))) => {
+                Ok(Cache::Miss)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn read_object_output(output: GetObjectOutput) -> Result<Cache> {
+        let body = output.body.context("no HTTP body")?;
+        let mut body_reader = body.into_async_read();
+        let mut body = Vec::new();
+        body_reader
+            .read_to_end(&mut body)
+            .await
+            .context("failed to read HTTP body")?;
+        let hit = CacheRead::from(io::Cursor::new(body))?;
+        Ok(Cache::Hit(hit))
+    }
+
+    async fn put_object(client: S3Client, request: PutObjectRequest) -> Result<()> {
+        client
+            .put_object(request)
+            .await
+            .map(|_| ())
+            .context("failed to put cache entry in s3")
     }
 
     fn normalize_key(&self, key: &str) -> String {
@@ -74,49 +119,41 @@ impl Storage for S3Cache {
     async fn get(&self, key: &str) -> Result<Cache> {
         let key = self.normalize_key(key);
 
-        let credentials = self.provider.credentials().await;
-        let result = match credentials {
-            Ok(creds) => self.bucket.get(&key, Some(&creds)).await,
-            Err(e) => {
-                debug!("Could not load AWS creds: {}", e);
-                self.bucket.get(&key, None).await
-            }
+        let client = self.client.clone();
+        let request = GetObjectRequest {
+            bucket: self.bucket_name.clone(),
+            key,
+            ..Default::default()
         };
 
-        match result {
-            Ok(data) => {
-                let hit = CacheRead::from(io::Cursor::new(data))?;
-                Ok(Cache::Hit(hit))
-            }
-            Err(e) => {
-                warn!("Got AWS error: {:?}", e);
-                Ok(Cache::Miss)
-            }
-        }
+        Self::get_object(client, request).await
     }
 
     async fn put(&self, key: &str, entry: CacheWrite) -> Result<Duration> {
         let key = self.normalize_key(&key);
         let start = Instant::now();
         let data = entry.finish()?;
+        let data_length = data.len();
 
-        let credentials = self
-            .provider
-            .credentials()
-            .await
-            .context("failed to get AWS credentials")?;
+        let client = self.client.clone();
+        let request = PutObjectRequest {
+            bucket: self.bucket_name.clone(),
+            body: Some(data.into()),
+            // Two weeks
+            cache_control: Some(CacheDirective::MaxAge(1_296_000).to_string()),
+            content_length: Some(data_length as i64),
+            content_type: Some("application/octet-stream".to_owned()),
+            key,
+            ..Default::default()
+        };
 
-        let bucket = self.bucket.clone();
-        let _ = bucket
-            .put(&key, data, &credentials)
-            .await
-            .context("failed to put cache entry in s3")?;
+        let _ = Self::put_object(client, request).await?;
 
         Ok(start.elapsed())
     }
 
     fn location(&self) -> String {
-        format!("S3, bucket: {}", self.bucket)
+        format!("S3, bucket: {}", self.bucket_name)
     }
 
     async fn current_size(&self) -> Result<Option<u64>> {

@@ -196,9 +196,13 @@ pub struct RedisCacheConfig {
 #[serde(deny_unknown_fields)]
 pub struct S3CacheConfig {
     pub bucket: String,
-    pub endpoint: String,
-    pub use_ssl: bool,
-    pub key_prefix: String,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub key_prefix: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+    pub public: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -446,32 +450,22 @@ pub struct EnvConfig {
 
 fn config_from_env() -> EnvConfig {
     let s3 = env::var("CACHEPOT_BUCKET").ok().map(|bucket| {
-        let endpoint = match env::var("CACHEPOT_ENDPOINT") {
-            Ok(endpoint) => format!("{}/{}", endpoint, bucket),
-            _ => match env::var("CACHEPOT_REGION") {
-                Ok(ref region) if region != "us-east-1" => {
-                    format!("{}.s3-{}.amazonaws.com", bucket, region)
-                }
-                _ => format!("{}.s3.amazonaws.com", bucket),
-            },
-        };
-        let use_ssl = env::var("CACHEPOT_S3_USE_SSL")
-            .ok()
-            .filter(|value| value != "off")
-            .is_some();
+        let endpoint = env::var("CACHEPOT_ENDPOINT").ok();
+        let region = env::var("CACHEPOT_REGION").ok();
         let key_prefix = env::var("CACHEPOT_S3_KEY_PREFIX")
             .ok()
             .as_ref()
             .map(|s| s.trim_end_matches('/'))
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_owned() + "/")
-            .unwrap_or_default();
+            .map(|s| s.to_owned() + "/");
+        let public = env::var("SCCACHE_S3_PUBLIC").ok().is_some();
 
         S3CacheConfig {
             bucket,
             endpoint,
-            use_ssl,
             key_prefix,
+            region,
+            public,
         }
     });
 
