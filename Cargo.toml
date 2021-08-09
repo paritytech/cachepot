@@ -63,7 +63,7 @@ num_cpus = "1.0"
 number_prefix = "0.4"
 percent-encoding = { version = "2", optional = true }
 rand = "0.8"
-redis = { version = "0.17", optional = true }
+redis = { version = "0.17", optional = true, default-features = false, features = ["aio", "tls", "tokio-comp", "tokio-tls-comp"] }
 regex = "1"
 reqwest = { version = "0.10", features = ["json", "blocking"], optional = true }
 retry = "1"
