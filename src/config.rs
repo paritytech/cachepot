@@ -933,8 +933,9 @@ url = "redis://user:passwd@1.2.3.4:6379/1"
 [cache.s3]
 bucket = "name"
 endpoint = "s3-us-east-1.amazonaws.com"
-use_ssl = true
+region = "us-east-1"
 key_prefix = "prefix"
+public = false
 "#;
 
     let file_config: FileConfig = toml::from_str(CONFIG_STR).expect("Is valid toml.");
@@ -961,9 +962,10 @@ key_prefix = "prefix"
                 }),
                 s3: Some(S3CacheConfig {
                     bucket: "name".to_owned(),
-                    endpoint: "s3-us-east-1.amazonaws.com".to_owned(),
-                    use_ssl: true,
-                    key_prefix: "prefix".to_owned(),
+                    endpoint: Some("s3-us-east-1.amazonaws.com".to_owned()),
+                    key_prefix: Some("prefix".to_owned()),
+                    region: Some("us-east-1".to_owned()),
+                    public: false,
                 }),
             },
             dist: DistConfig {
