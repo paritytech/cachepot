@@ -1,4 +1,4 @@
-# How to run cachepot book?
+# Building the cachepot book
 
 Install the dependencies using the command below:
 
