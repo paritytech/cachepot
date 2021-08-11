@@ -47,6 +47,7 @@ fs-err = "2.6"
 hmac = { version = "0.10", optional = true }
 http = "0.2"
 hyper = { version = "0.13", optional = true }
+hyper-tls = { version = "0.4", optional = true }
 hyperx = { version = "0.13", optional = true }
 jobserver = "0.1"
 jsonwebtoken = { version = "7", optional = true }
@@ -68,6 +69,8 @@ regex = "1"
 reqwest = { version = "0.10", features = ["json", "blocking"], optional = true }
 retry = "1"
 ring = { version = "0.16", optional = true, features = ["std"] }
+rusoto_core = { version = "0.45", optional = true }
+rusoto_s3 = { version = "0.45", optional = true }
 sha-1 = { version = "0.9", optional = true }
 sha2 = { version = "0.9", optional = true }
 serde = "1.0"
@@ -130,8 +133,7 @@ features = [
 default = ["all"]
 all = ["dist-client", "redis", "s3", "memcached", "gcs", "azure"]
 azure = ["chrono", "hyper", "hyperx", "url", "hmac", "md-5", "sha2"]
-s3 = ["chrono", "hyper", "hyperx", "reqwest", "simple-s3", "hmac", "sha-1"]
-simple-s3 = []
+s3 = ["chrono", "hyper", "hyper-tls", "hyperx", "reqwest", "rusoto_core", "rusoto_s3", "hmac", "sha-1"]
 gcs = ["chrono", "hyper", "hyperx", "percent-encoding", "reqwest", "ring", "untrusted", "url"]
 memcached = ["memcached-rs"]
 native-zlib = []
