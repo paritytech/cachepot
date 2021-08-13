@@ -1,8 +1,7 @@
 # cachepot
 
+- [cachepot](./intro.md)
 - [Quickstart](./dist/quickstart.md)
-- [Introduction](./intro.md)
-- [Full](./dist/quickstart.md)
 - [Configuration](./configuration.md)
 
 ## CI
