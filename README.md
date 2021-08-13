@@ -1,7 +1,7 @@
 [![Build Status](https://github.com/paritytech/cachepot/workflows/ci/badge.svg)](https://github.com/paritytech/cachepot/actions?query=workflow%3Aci)
 [![rust 1.43.0+ badge](https://img.shields.io/badge/rust-1.43.0+-93450a.svg)](https://blog.rust-lang.org/2020/04/23/Rust-1.43.0.html)
 
-![cachepot maskot image](./cachepot.png)
+![cachepot maskot image](./docs/book/src/cachepot.png)
 
 cachepot - Shared Compilation Cache
 ==================================

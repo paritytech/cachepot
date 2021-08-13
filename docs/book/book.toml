@@ -2,7 +2,7 @@
 language = "en"
 multilingual = false
 src = "src"
-title = "cachepot design goals"
+title = "cachepot"
 authors = [
 	"Bernhard Schuster <bernhard@ahoi.io>",
 	"Grzegorz Wierzowiecki"
