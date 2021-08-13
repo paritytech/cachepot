@@ -186,6 +186,13 @@ impl OverlayBuilder {
                 entry.build_count += 1;
                 entry.clone()
             } else {
+                if toolchain_dir.exists() {
+                    warn!(
+                        "Toolchain directory for {} already exists, removing",
+                        tc.archive_id
+                    );
+                    fs::remove_dir_all(&toolchain_dir)?;
+                }
                 trace!("Creating toolchain directory for {}", tc.archive_id);
                 fs::create_dir(&toolchain_dir)?;
 
