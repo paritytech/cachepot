@@ -1197,6 +1197,7 @@ where
                         }
                         Err(err) => match err.downcast::<HttpClientError>() {
                             Ok(HttpClientError(msg)) => {
+                                #[cfg(feature = "dist-client")]
                                 me.dist_client.reset_state().await;
                                 let errmsg =
                                     format!("[{:?}] http error status: {}", out_pretty, msg);
