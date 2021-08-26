@@ -72,7 +72,7 @@ impl Storage for MemcachedCache {
 
         self.pool
             .spawn_blocking(move || {
-                me.exec(|c| c.get(&key.as_bytes()))
+                me.exec(|c| c.get(key.as_bytes()))
                     .map(|(d, _)| CacheRead::from(Cursor::new(d)).map(Cache::Hit))
                     .unwrap_or(Ok(Cache::Miss))
             })
@@ -87,7 +87,7 @@ impl Storage for MemcachedCache {
             .spawn_blocking(move || {
                 let start = Instant::now();
                 let d = entry.finish()?;
-                me.exec(|c| c.set_noreply(&key.as_bytes(), &d, 0, 0))?;
+                me.exec(|c| c.set_noreply(key.as_bytes(), &d, 0, 0))?;
                 Ok(start.elapsed())
             })
             .await?

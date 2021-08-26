@@ -52,7 +52,7 @@ impl AzureBlobCache {
 #[async_trait]
 impl Storage for AzureBlobCache {
     async fn get(&self, key: &str) -> Result<Cache> {
-        match self.container.get(&key, &self.credentials).await {
+        match self.container.get(key, &self.credentials).await {
             Ok(data) => {
                 let hit = CacheRead::from(io::Cursor::new(data))?;
                 Ok(Cache::Hit(hit))

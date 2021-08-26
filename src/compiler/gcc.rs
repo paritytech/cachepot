@@ -651,7 +651,7 @@ pub fn generate_compile_commands(
         }
         arguments.extend(dist::osstrings_to_strings(&parsed_args.common_args)?);
         Some(dist::CompileCommand {
-            executable: path_transformer.as_dist(&executable)?,
+            executable: path_transformer.as_dist(executable)?,
             arguments,
             env_vars: dist::osstring_tuples_to_strings(env_vars)?,
             cwd: path_transformer.as_dist_abs(cwd)?,
@@ -1322,7 +1322,7 @@ mod test {
         let mut path_transformer = dist::PathTransformer::default();
         let (command, dist_command, cacheable) = generate_compile_commands(
             &mut path_transformer,
-            &compiler,
+            compiler,
             &parsed_args,
             f.tempdir.path(),
             &[],

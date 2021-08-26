@@ -464,7 +464,7 @@ impl GCSCache {
 #[async_trait]
 impl Storage for GCSCache {
     async fn get(&self, key: &str) -> Result<Cache> {
-        match self.bucket.get(&key, &self.credential_provider).await {
+        match self.bucket.get(key, &self.credential_provider).await {
             Ok(data) => {
                 let hit = CacheRead::from(io::Cursor::new(data))?;
                 Ok(Cache::Hit(hit))
@@ -486,7 +486,7 @@ impl Storage for GCSCache {
 
         let bucket = self.bucket.clone();
         let _ = bucket
-            .put(&key, data, &self.credential_provider)
+            .put(key, data, &self.credential_provider)
             .await
             .context("failed to put cache entry in GCS")?;
 
