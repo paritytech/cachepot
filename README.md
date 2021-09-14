@@ -120,21 +120,22 @@ No native dependencies.
 
 Build with `cargo` and use `ldd` to check that the resulting binary does not depend on OpenSSL anymore.
 
-#### Linux and Docker
+#### Linux and Podman
 
 Also you can build the repo with 
 [Parity CI Docker image](https://github.com/paritytech/scripts/tree/master/dockerfiles/cachepot-ci):
 
 ```bash
-docker pull paritytech/cachepot-ci:staging
+podman pull docker.io/paritytech/cachepot-ci:staging
 mkdir ~/cache
-sudo chown 1000:1000 ~/cache #processes in the container runs as "nonroot" user with UID 1000
-docker run --rm -it -w /shellhere/cachepot \
+podman unshare chown 1000:1000 -R ~/cache #processes in the container runs as "nonroot" user with UID 1000
+podman run --rm -it -w /shellhere/cachepot \
                     -v /home/$(whoami)/cache/:/cache/    \
                     -v "$(pwd)":/shellhere/cachepot \
                     -e CARGO_HOME=/cache/cargo/ \
-                    -e SCCACHE_DIR=/cache/sccache/ \
-                    -e CARGO_TARGET_DIR=/cache/target/  paritytech/cachepot-ci:staging cargo build --locked --release
+                    -e CACHEPOT_DIR=/cache/cachepot/ \
+                    -e CARGO_TARGET_DIR=/cache/target/  \
+                    docker.io/paritytech/cachepot-ci:staging cargo build --locked --release
 #artifacts can be found in ~/cache/target
 ```
 
