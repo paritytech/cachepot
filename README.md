@@ -126,17 +126,12 @@ Also you can build the repo with
 [Parity CI Docker image](https://github.com/paritytech/scripts/tree/master/dockerfiles/cachepot-ci):
 
 ```bash
-podman pull docker.io/paritytech/cachepot-ci:staging
-mkdir ~/cache
-podman unshare chown 1000:1000 -R ~/cache #processes in the container runs as "nonroot" user with UID 1000
 podman run --rm -it -w /shellhere/cachepot \
-                    -v /home/$(whoami)/cache/:/cache/    \
-                    -v "$(pwd)":/shellhere/cachepot \
-                    -e CARGO_HOME=/cache/cargo/ \
-                    -e CACHEPOT_DIR=/cache/cachepot/ \
-                    -e CARGO_TARGET_DIR=/cache/target/  \
+                    -v "$(pwd)":/shellhere/cachepot:Z \
+                    -u $(id -u):$(id -g) \
+                    --userns=keep-id \
                     docker.io/paritytech/cachepot-ci:staging cargo build --locked --release
-#artifacts can be found in ~/cache/target
+#artifacts can be found in ./target/release
 ```
 
 If you want to reproduce other steps of CI process you can use the following 
