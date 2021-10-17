@@ -321,10 +321,12 @@ where
         // github: https://github.com/rust-lang/rust/blob/master/src/test/run-make/env-dep-info/Makefile#L14
         .filter_map(|line| {
             let mut spliter = line[ENV_DEP_PREFIX.len()..].splitn(2, '=');
-            spliter.next().map(|key| (
+            spliter.next().map(|key| {
+                (
                     OsString::from(key),
                     spliter.next().map(OsString::from).unwrap_or_default(),
-                ))
+                )
+            })
         })
         .collect::<Vec<_>>();
     dep_envs.sort();
@@ -2796,10 +2798,7 @@ baz.rs:
 
 abc def.rs:
 "#;
-        assert_eq!(
-            pathvec!["abc def.rs", "baz.rs"],
-            parse_dep_info(deps, "").0
-        );
+        assert_eq!(pathvec!["abc def.rs", "baz.rs"], parse_dep_info(deps, "").0);
     }
 
     #[cfg(not(windows))]
