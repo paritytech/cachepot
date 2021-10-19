@@ -24,6 +24,7 @@ use crate::compiler::rust::{Rust, RustupProxy};
 use crate::dist;
 #[cfg(feature = "dist-client")]
 use crate::dist::pkg;
+#[cfg(feature = "dist-client")]
 use crate::lru_disk_cache;
 use crate::mock_command::{exit_status, CommandChild, CommandCreatorSync, RunCommand};
 #[cfg(feature = "dist-client")]
@@ -699,10 +700,10 @@ pub enum CompilerArguments<T> {
 
 macro_rules! cannot_cache {
     ($why:expr) => {
-        return CompilerArguments::CannotCache($why, None);
+        return CompilerArguments::CannotCache($why, None)
     };
     ($why:expr, $extra_info:expr) => {
-        return CompilerArguments::CannotCache($why, Some($extra_info));
+        return CompilerArguments::CannotCache($why, Some($extra_info))
     };
 }
 
@@ -907,7 +908,7 @@ where
                 &executable2,
                 "rustup",
                 creator.clone(),
-                &env,
+                env,
             );
             use futures::TryFutureExt;
             let res = proxy.and_then(move |proxy| async move {
@@ -915,7 +916,7 @@ where
                     Ok(Some(proxy)) => {
                         trace!("Found rustup proxy executable");
                         // take the pathbuf for rustc as resolved by the proxy
-                        match proxy.resolve_proxied_executable(creator1, cwd, &env).await {
+                        match proxy.resolve_proxied_executable(creator1, cwd, env).await {
                             Ok((resolved_path, _time)) => {
                                 trace!("Resolved path with rustup proxy {:?}", &resolved_path);
                                 Ok((Some(proxy), resolved_path))
@@ -955,7 +956,7 @@ where
             Rust::new(
                 creator,
                 resolved_rustc,
-                &env,
+                env,
                 &rustc_verbose_version,
                 dist_archive,
                 pool,
@@ -1162,7 +1163,7 @@ mod test {
         let runtime = single_threaded_runtime();
         let pool = runtime.handle();
         next_command(&creator, Ok(MockChild::new(exit_status(0), "\n\ngcc", "")));
-        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1176,7 +1177,7 @@ mod test {
         let runtime = single_threaded_runtime();
         let pool = runtime.handle();
         next_command(&creator, Ok(MockChild::new(exit_status(0), "clang\n", "")));
-        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1204,7 +1205,7 @@ mod test {
             &creator,
             Ok(MockChild::new(exit_status(0), &stdout, &String::new())),
         );
-        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1218,7 +1219,7 @@ mod test {
         let runtime = single_threaded_runtime();
         let pool = runtime.handle();
         next_command(&creator, Ok(MockChild::new(exit_status(0), "nvcc\n", "")));
-        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1256,7 +1257,7 @@ LLVM version: 6.0",
         next_command(&creator, Ok(MockChild::new(exit_status(0), &sysroot, "")));
         next_command(&creator, Ok(MockChild::new(exit_status(0), &sysroot, "")));
         next_command(&creator, Ok(MockChild::new(exit_status(0), &sysroot, "")));
-        let c = detect_compiler(creator, &rustc, f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &rustc, f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1270,7 +1271,7 @@ LLVM version: 6.0",
         let runtime = single_threaded_runtime();
         let pool = runtime.handle();
         next_command(&creator, Ok(MockChild::new(exit_status(0), "\ndiab\n", "")));
-        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = detect_compiler(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;
@@ -1292,7 +1293,7 @@ LLVM version: 6.0",
             "/foo/bar".as_ref(),
             f.tempdir.path(),
             &[],
-            &pool,
+            pool,
             None
         )
         .wait()
@@ -1311,7 +1312,7 @@ LLVM version: 6.0",
             "/foo/bar".as_ref(),
             f.tempdir.path(),
             &[],
-            &pool,
+            pool,
             None
         )
         .wait()
@@ -1337,7 +1338,7 @@ LLVM version: 6.0",
                     &f.bins[0],
                     f.tempdir.path(),
                     &[],
-                    &pool,
+                    pool,
                     None,
                 )
                 .wait()
@@ -1352,7 +1353,7 @@ LLVM version: 6.0",
                     o => panic!("Bad result from parse_arguments: {:?}", o),
                 };
                 hasher
-                    .generate_hash_key(&creator, cwd.to_path_buf(), vec![], false, &pool, false)
+                    .generate_hash_key(&creator, cwd.to_path_buf(), vec![], false, pool, false)
                     .wait()
                     .unwrap()
             })
@@ -1369,7 +1370,7 @@ LLVM version: 6.0",
         let f = TestFixture::new();
         // Pretend to be GCC.
         next_command(&creator, Ok(MockChild::new(exit_status(0), "gcc", "")));
-        let c = get_compiler_info(creator, &f.bins[0], f.tempdir.path(), &[], &pool, None)
+        let c = get_compiler_info(creator, &f.bins[0], f.tempdir.path(), &[], pool, None)
             .wait()
             .unwrap()
             .0;

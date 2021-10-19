@@ -130,7 +130,7 @@ impl Storage for S3Cache {
     }
 
     async fn put(&self, key: &str, entry: CacheWrite) -> Result<Duration> {
-        let key = self.normalize_key(&key);
+        let key = self.normalize_key(key);
         let start = Instant::now();
         let data = entry.finish()?;
         let data_length = data.len();

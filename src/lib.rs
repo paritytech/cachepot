@@ -17,7 +17,8 @@
 #![allow(
     clippy::complexity,
     clippy::type_complexity,
-    clippy::new_without_default
+    clippy::new_without_default,
+    clippy::upper_case_acronyms
 )]
 #![recursion_limit = "256"]
 

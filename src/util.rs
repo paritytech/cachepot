@@ -117,7 +117,7 @@ pub fn hex(bytes: &[u8]) -> String {
 pub async fn hash_all(files: &[PathBuf], pool: &tokio::runtime::Handle) -> Result<Vec<String>> {
     let start = time::Instant::now();
     let count = files.len();
-    let iter = files.iter().map(move |f| Digest::file(f, &pool));
+    let iter = files.iter().map(move |f| Digest::file(f, pool));
     let hashes = futures::future::try_join_all(iter).await?;
     trace!(
         "Hashed {} files in {}",
