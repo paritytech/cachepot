@@ -1529,7 +1529,7 @@ where
         };
         if let Some(gcno) = gcno {
             let p = output_dir.join(&gcno);
-            outputs.insert(gcno.to_string_lossy().into_owned(), p.clone());
+            outputs.insert(gcno.to_string_lossy().into_owned(), p);
         }
 
         let mut arguments = arguments;
