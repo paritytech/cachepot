@@ -31,7 +31,7 @@ jobs:
         uses: ./.github/actions/rust-toolchain
         with:
           components: ${{ matrix.component }}
-          toolchain: 1.50.0
+          toolchain: 1.55.0
 
       - name: clippy version
         run: cargo clippy --version
