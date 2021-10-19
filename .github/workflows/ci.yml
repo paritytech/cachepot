@@ -31,7 +31,7 @@ jobs:
         uses: ./.github/actions/rust-toolchain
         with:
           components: ${{ matrix.component }}
-          toolchain: 1.50.0
+          toolchain: 1.55.0
 
       - name: clippy version
         run: cargo clippy --version
@@ -90,11 +90,11 @@ jobs:
         include:
           - target_repository: paritytech/polkadot
             # Pin a well-known nightly version to avoid upstream breakage
-            rustc: nightly-2021-05-10
+            rustc: nightly-2021-10-04
             target: wasm32-unknown-unknown
             allow_failure: true
           - target_repository: paritytech/substrate
-            rustc: nightly-2021-05-10
+            rustc: nightly-2021-10-04
             target: wasm32-unknown-unknown
             allow_failure: true
           - target_repository: serde-rs/serde
