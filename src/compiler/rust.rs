@@ -1145,14 +1145,12 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
                     (_, _) => (),
                 }
             }
-            Some(Unstable(ArgUnstable { opt, value })) => {
-                match value.as_deref() {
-                    Some("y") | Some("yes") | Some("on") | None if opt == "profile" => {
-                        profile = true;
-                    }
-                    _ => (),
+            Some(Unstable(ArgUnstable { opt, value })) => match value.as_deref() {
+                Some("y") | Some("yes") | Some("on") | None if opt == "profile" => {
+                    profile = true;
                 }
-            }
+                _ => (),
+            },
             Some(Color(value)) => {
                 // We'll just assume the last specified value wins.
                 color_mode = match value.as_ref() {
