@@ -136,6 +136,8 @@ pub struct ParsedArguments {
     crate_types: CrateTypes,
     /// If dependency info is being emitted, the name of the dep info file.
     dep_info: Option<PathBuf>,
+    /// If gcno info is being emitted, the name of the gcno file.
+    gcno: Option<PathBuf>,
     /// rustc says that emits .rlib for --emit=metadata
     /// https://github.com/rust-lang/rust/issues/54852
     emit: HashSet<String>,
@@ -890,6 +892,36 @@ impl IntoArg for ArgCodegen {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct ArgUnstable {
+    opt: String,
+    value: Option<String>,
+}
+impl FromArg for ArgUnstable {
+    fn process(arg: OsString) -> ArgParseResult<Self> {
+        let (opt, value) = split_os_string_arg(arg, "=")?;
+        Ok(ArgUnstable { opt, value })
+    }
+}
+impl IntoArg for ArgUnstable {
+    fn into_arg_os_string(self) -> OsString {
+        let ArgUnstable { opt, value } = self;
+        if let Some(value) = value {
+            make_os_string!(opt, "=", value)
+        } else {
+            make_os_string!(opt)
+        }
+    }
+    fn into_arg_string(self, transformer: PathTransformerFn<'_>) -> ArgToStringResult {
+        let ArgUnstable { opt, value } = self;
+        Ok(if let Some(value) = value {
+            format!("{}={}", opt, value.into_arg_string(transformer)?)
+        } else {
+            opt
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 struct ArgExtern {
     name: String,
     path: PathBuf,
@@ -984,6 +1016,7 @@ ArgData! {
     CodeGen(ArgCodegen),
     PassThrough(OsString),
     Target(ArgTarget),
+    Unstable(ArgUnstable),
 }
 
 use self::ArgData::*;
@@ -1022,7 +1055,7 @@ counted_array!(static ARGS: [ArgInfo<ArgData>; _] = [
     take_arg!("-L", ArgLinkPath, CanBeSeparated, LinkPath),
     flag!("-V", NotCompilationFlag),
     take_arg!("-W", OsString, CanBeSeparated, PassThrough),
-    take_arg!("-Z", OsString, CanBeSeparated, PassThrough),
+    take_arg!("-Z", ArgUnstable, CanBeSeparated, Unstable),
     take_arg!("-l", ArgLinkLibrary, CanBeSeparated, LinkLibrary),
     take_arg!("-o", PathBuf, CanBeSeparated, TooHardPath),
 ]);
@@ -1045,6 +1078,7 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
     let mut static_link_paths: Vec<PathBuf> = vec![];
     let mut color_mode = ColorMode::Auto;
     let mut has_json = false;
+    let mut profile = false;
 
     for arg in ArgsIter::new(arguments.iter().cloned(), &ARGS[..]) {
         let arg = try_or_cannot_cache!(arg, "argument parse");
@@ -1111,6 +1145,12 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
                     (_, _) => (),
                 }
             }
+            Some(Unstable(ArgUnstable { opt, value })) => match value.as_deref() {
+                Some("y") | Some("yes") | Some("on") | None if opt == "profile" => {
+                    profile = true;
+                }
+                _ => (),
+            },
             Some(Color(value)) => {
                 // We'll just assume the last specified value wins.
                 color_mode = match value.as_ref() {
@@ -1190,7 +1230,7 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
     // Figure out the dep-info filename, if emitting dep-info.
     let dep_info = if emit.contains("dep-info") {
         let mut dep_info = crate_name.clone();
-        if let Some(extra_filename) = extra_filename {
+        if let Some(extra_filename) = extra_filename.clone() {
             dep_info.push_str(&extra_filename[..]);
         }
         dep_info.push_str(".d");
@@ -1198,6 +1238,19 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
     } else {
         None
     };
+
+    // Figure out the gcno filename, if producing gcno files with `-Zprofile`.
+    let gcno = if profile {
+        let mut gcno = crate_name.clone();
+        if let Some(extra_filename) = extra_filename {
+            gcno.push_str(&extra_filename[..]);
+        }
+        gcno.push_str(".gcno");
+        Some(gcno)
+    } else {
+        None
+    };
+
     // Locate all static libs specified on the commandline.
     let staticlibs = static_lib_names
         .into_iter()
@@ -1233,6 +1286,7 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
         staticlibs,
         crate_name,
         dep_info: dep_info.map(|s| s.into()),
+        gcno: gcno.map(|s| s.into()),
         emit,
         color_mode,
         has_json,
@@ -1273,6 +1327,7 @@ where
                     dep_info,
                     emit,
                     has_json,
+                    gcno,
                     ..
                 },
         } = *self;
@@ -1472,6 +1527,11 @@ where
         } else {
             None
         };
+        if let Some(gcno) = gcno {
+            let p = output_dir.join(&gcno);
+            outputs.insert(gcno.to_string_lossy().into_owned(), p.clone());
+        }
+
         let mut arguments = arguments;
         // Request color output unless json was requested. The client will strip colors if needed.
         if !has_json {
@@ -2986,6 +3046,7 @@ c:/foo/bar.rs:
                 emit,
                 color_mode: ColorMode::Auto,
                 has_json: false,
+                gcno: None,
             },
         });
         let creator = new_creator();
