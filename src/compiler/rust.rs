@@ -2948,7 +2948,11 @@ c:/foo/bar.rs:
     #[cfg(feature = "dist-client")]
     #[test]
     fn test_parse_rustc_z_ls() {
-        let output = "=External Dependencies=
+        let output = "Crate info:
+name itoa-292f0c0aa4cceb9b
+hash bad7b4d042d5e1e2 stable_crate_id StableCrateId(10504034775541642711)
+proc_macro false
+=External Dependencies=
 1 lucet_runtime
 2 lucet_runtime_internals-1ff6232b6940e924
 3 lucet_runtime_macros-c18e1952b835769e
