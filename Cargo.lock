@@ -364,6 +364,7 @@ dependencies = [
  "cc",
  "chrono",
  "clap",
+ "common-path",
  "counted-array",
  "crossbeam-utils 0.8.1",
  "daemonize",
@@ -401,6 +402,7 @@ dependencies = [
  "rand 0.8.3",
  "redis",
  "regex",
+ "relative-path",
  "reqwest 0.11.6",
  "retry",
  "ring",
@@ -514,6 +516,12 @@ dependencies = [
  "tokio 1.13.0",
  "tokio-util",
 ]
+
+[[package]]
+name = "common-path"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2382f75942f4b3be3690fe4f86365e9c853c1587d6ee58212cebf6e2a9ccd101"
 
 [[package]]
 name = "conhash"
@@ -2611,6 +2619,12 @@ name = "regex-syntax"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b181ba2dcf07aaccad5448e8ead58db5b742cf85dfe035e2227f137a539a189"
+
+[[package]]
+name = "relative-path"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9629de8974fd69c97684736786b807edd3da456d3e3f95341dd9d4cbd8f5ad6"
 
 [[package]]
 name = "remove_dir_all"

@@ -197,7 +197,7 @@ lazy_static! {
 /// Version number for cache key.
 const CACHE_VERSION: &[u8] = b"6";
 
-/// Get absolute paths for all source files listed in rustc's dep-info output.
+/// Get paths for all source files listed in rustc's dep-info output.
 async fn get_source_files<T>(
     creator: &T,
     crate_name: &str,
@@ -259,6 +259,18 @@ where
             (None, "Cargo.toml"),
             (Some("libp2p_wasm_ext"), "src/websockets.js"),
         ];
+
+        let cachepot_basedir = env_vars
+            .iter()
+            .find(|(key, _)| key.to_str() == Some("CACHEPOT_BASEDIR"))
+            .map(|(_, value)| Path::new(value));
+
+        for file in files.iter_mut() {
+            if let Some(cachepot_basedir) = cachepot_basedir {
+                *file = crate::util::relative_to_basedir(&file, cachepot_basedir, &cwd2).unwrap();
+            }
+        }
+
         for (target_crate_name, file_path) in KNOWN_AUX_DEP_FILES {
             let name_matches = target_crate_name.map_or(true, |x| x == crate_name);
             // If this is a Cargo package, try to get the same path prefix as
@@ -284,6 +296,7 @@ where
         );
         // Just to make sure we capture temp_dir.
         drop(temp_dir);
+        debug!("\nfiles {:?}\n\n", files);
         (files, dep_envs)
     })
 }
@@ -1336,6 +1349,7 @@ where
                 )
             })
             .collect();
+
         // `filtered_arguments` omits --emit and --out-dir arguments.
         // It's used for invoking rustc with `--emit=dep-info` to get the list of
         // source files for this crate.
@@ -1448,7 +1462,9 @@ where
             }
         }
         // 8. The cwd of the compile. This will wind up in the rlib.
-        cwd.hash(&mut HashToDigest { digest: &mut m });
+        // TODO: this is a hack
+        // TODO: if this changes change CACHE_VERSION
+        // cwd.hash(&mut HashToDigest { digest: &mut m });
         // Turn arguments into a simple Vec<OsString> to calculate outputs.
         let flat_os_string_arguments: Vec<OsString> = os_string_arguments
             .into_iter()
@@ -1541,6 +1557,7 @@ where
             .chain(abs_externs)
             .chain(abs_staticlibs)
             .collect();
+        warn!("Inputs {:?}", inputs);
 
         Ok(HashResult {
             key: m.finish(),
@@ -3107,6 +3124,214 @@ proc_macro false
             .collect::<Vec<_>>();
         out.sort();
         assert_eq!(out, vec!["foo.a", "foo.rlib", "foo.rmeta"]);
+    }
+
+    // Verify that the same code located at two different
+    // locations with the properly set `CACHEPOT_BASEDIR`
+    // ends up with equal hashes.
+    #[test]
+    fn test_hashes_equal_with_basedir() {
+        let _ = env_logger::Builder::new().is_test(true).try_init();
+        let project1 = TestFixture::new();
+        let project2 = TestFixture::new();
+
+        const FAKE_DIGEST: &str = "abcd1234";
+
+        // We'll just use empty files for each of these.
+        for s in ["foo.rs", "bar.rs", "bar.rlib", "libbaz.a"].iter() {
+            project1.touch(s).unwrap();
+            project2.touch(s).unwrap();
+        }
+
+        let mut emit = HashSet::new();
+        emit.insert("link".to_string());
+        emit.insert("metadata".to_string());
+
+        let hasher_project1 = Box::new(RustHasher {
+            executable: "rustc".into(),
+            host: "x86-64-unknown-unknown-unknown".to_owned(),
+            sysroot: project1.tempdir.path().join("sysroot"),
+            compiler_shlibs_digests: vec![FAKE_DIGEST.to_owned()],
+            #[cfg(feature = "dist-client")]
+            rlib_dep_reader: None,
+            parsed_args: ParsedArguments {
+                arguments: vec![
+                    Argument::Raw("a".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("xyz".into()),
+                        ArgDisposition::Separated,
+                    ),
+                    Argument::Raw("b".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("abc".into()),
+                        ArgDisposition::Separated,
+                    ),
+                ],
+                output_dir: "foo/".into(),
+                externs: vec!["bar.rlib".into()],
+                crate_link_paths: vec![],
+                staticlibs: vec![project1.tempdir.path().join("libbaz.a")],
+                crate_name: "foo".into(),
+                crate_types: CrateTypes {
+                    rlib: true,
+                    staticlib: false,
+                },
+                dep_info: None,
+                emit,
+                color_mode: ColorMode::Auto,
+                has_json: false,
+            },
+        });
+
+        let mut emit = HashSet::new();
+        emit.insert("link".to_string());
+        emit.insert("metadata".to_string());
+
+        let hasher_project2 = Box::new(RustHasher {
+            executable: "rustc".into(),
+            host: "x86-64-unknown-unknown-unknown".to_owned(),
+            sysroot: project2.tempdir.path().join("sysroot"),
+            compiler_shlibs_digests: vec![FAKE_DIGEST.to_owned()],
+            #[cfg(feature = "dist-client")]
+            rlib_dep_reader: None,
+            parsed_args: ParsedArguments {
+                arguments: vec![
+                    Argument::Raw("a".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("xyz".into()),
+                        ArgDisposition::Separated,
+                    ),
+                    Argument::Raw("b".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("abc".into()),
+                        ArgDisposition::Separated,
+                    ),
+                ],
+                output_dir: "foo/".into(),
+                externs: vec!["bar.rlib".into()],
+                crate_link_paths: vec![],
+                staticlibs: vec![project2.tempdir.path().join("libbaz.a")],
+                crate_name: "foo".into(),
+                crate_types: CrateTypes {
+                    rlib: true,
+                    staticlib: false,
+                },
+                dep_info: None,
+                emit,
+                color_mode: ColorMode::Auto,
+                has_json: false,
+            },
+        });
+
+        let tmp_common_path =
+            common_path::common_path(project1.tempdir.path(), project2.tempdir.path()).unwrap();
+
+
+        let creator = new_creator();
+        mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator, &["foo.rlib", "foo.a"]);
+        let runtime = single_threaded_runtime();
+        let pool = runtime.handle().clone();
+        std::env::set_current_dir(project1.tempdir.path()).unwrap();
+        let res_project1 = hasher_project1
+            .clone()
+            .generate_hash_key(
+                &creator,
+                project1.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                    (
+                        OsString::from("CACHEPOT_BASEDIR"),
+                        OsString::from(tmp_common_path.clone()),
+                    ),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let current_dir = std::env::current_dir().unwrap();
+        let creator_project2 = new_creator();
+        mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
+        std::env::set_current_dir(project2.tempdir.path()).unwrap();
+        let res_project2 = hasher_project2
+            .clone()
+            .generate_hash_key(
+                &creator_project2,
+                project2.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                    (
+                        OsString::from("CACHEPOT_BASEDIR"),
+                        OsString::from(tmp_common_path),
+                    ),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let creator = new_creator();
+        mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator, &["foo.rlib", "foo.a"]);
+        let res_project1_no_basedir = hasher_project1
+            .generate_hash_key(
+                &creator,
+                project1.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let creator_project2 = new_creator();
+        mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
+        let res_project2_no_basedir = hasher_project2
+            .generate_hash_key(
+                &creator_project2,
+                project2.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        // This hashes equally
+        assert_eq!(res_project1.key, res_project2.key);
+        // But this also does since the `cwd` is excluded from hash now
+        assert_eq!(res_project1_no_basedir.key, res_project2_no_basedir.key);
+
+        std::env::set_current_dir(current_dir).unwrap();
     }
 
     fn hash_key<F>(

@@ -544,10 +544,143 @@ pub fn daemonize() -> Result<()> {
     Ok(())
 }
 
+/// Rewrite `path` into a path relative to the `cwd` if this path starts with `basedir`.
+///
+/// `cwd, `basedir` and `path` have to be absolute.
+pub fn relative_to_basedir<P: AsRef<Path>, B: AsRef<Path>, C: AsRef<Path>>(
+    path: P,
+    basedir: B,
+    cwd: C,
+) -> Result<PathBuf> {
+    use relative_path::RelativePath;
+    use std::path::Component;
+
+    if !path.as_ref().starts_with(&basedir) {
+        return Ok(path.as_ref().to_path_buf());
+    }
+
+    // Turn absolute paths into paths relative to root
+    let path: PathBuf = path
+        .as_ref()
+        .components()
+        .skip_while(|&c| c == Component::RootDir)
+        .collect();
+    let cwd: PathBuf = cwd
+        .as_ref()
+        .components()
+        .skip_while(|&c| c == Component::RootDir)
+        .collect();
+
+    let relative = RelativePath::from_path(&cwd)?
+        .relative(RelativePath::from_path(&path)?)
+        .to_path(".");
+
+    Ok(relative)
+}
+
 #[cfg(test)]
 mod tests {
     use super::OsStrExt;
     use std::ffi::{OsStr, OsString};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn relative_to_basedir_works() {
+        // Cases taken from `https://ccache.dev/manual/latest.html#_configuration_settings` base_dir
+
+        // Case with `base_dir = /`
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/usr/include/example"),
+                Path::new("/"),
+                Path::new("/home/alice/project1/build")
+            )
+            .unwrap(),
+            PathBuf::from("./../../../../usr/include/example")
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project2/include"),
+                Path::new("/"),
+                Path::new("/home/alice/project1/build")
+            )
+            .unwrap(),
+            PathBuf::from("./../../project2/include")
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project1/src/example.c"),
+                Path::new("/"),
+                Path::new("/home/alice/project1/build")
+            )
+            .unwrap(),
+            PathBuf::from("./../src/example.c")
+        );
+
+        // Case with `base_dir = /home/alice`
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/usr/include/example"),
+                Path::new("/home/alice"),
+                Path::new("/home/alice/project1/build"),
+            )
+            .unwrap(),
+            PathBuf::from("/usr/include/example"),
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project2/include"),
+                Path::new("/home/alice"),
+                Path::new("/home/alice/project1/build"),
+            )
+            .unwrap(),
+            PathBuf::from("./../../project2/include"),
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project1/src/example.c"),
+                Path::new("/home/alice"),
+                Path::new("/home/alice/project1/build")
+            )
+            .unwrap(),
+            PathBuf::from("./../src/example.c")
+        );
+
+        // Case with `base_dir = /home/alice/project1`
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/usr/include/example"),
+                Path::new("/home/alice/project1/"),
+                Path::new("/home/alice/project1/build"),
+            )
+            .unwrap(),
+            PathBuf::from("/usr/include/example"),
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project2/include"),
+                Path::new("/home/alice/project1"),
+                Path::new("/home/alice/project1/build"),
+            )
+            .unwrap(),
+            PathBuf::from("/home/alice/project2/include"),
+        );
+
+        assert_eq!(
+            super::relative_to_basedir(
+                Path::new("/home/alice/project1/src/example.c"),
+                Path::new("/home/alice/project1"),
+                Path::new("/home/alice/project1/build"),
+            )
+            .unwrap(),
+            PathBuf::from("./../src/example.c"),
+        );
+    }
 
     #[test]
     fn simple_starts_with() {
