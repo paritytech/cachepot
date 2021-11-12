@@ -1,5 +1,5 @@
 [![Build Status](https://github.com/paritytech/cachepot/workflows/ci/badge.svg)](https://github.com/paritytech/cachepot/actions?query=workflow%3Aci)
-[![rust 1.43.0+ badge](https://img.shields.io/badge/rust-1.43.0+-93450a.svg)](https://blog.rust-lang.org/2020/04/23/Rust-1.43.0.html)
+[![rust 1.56.1+ badge](https://img.shields.io/badge/rust-1.56.1+-93450a.svg)](https://blog.rust-lang.org/2021/11/01/Rust-1.56.1.html)
 
 ![cachepot maskot image](./docs/book/src/cachepot.png)
 
@@ -101,7 +101,7 @@ To use cachepot with cmake, provide the following command line arguments to `cma
 Build Requirements
 ------------------
 
-cachepot is a [Rust](https://www.rust-lang.org/) program. Building it requires `cargo` (and thus `rustc`). cachepot currently requires **Rust 1.43.0**. We recommend you install Rust via [Rustup](https://rustup.rs/).
+cachepot is a [Rust](https://www.rust-lang.org/) program. Building it requires `cargo` (and thus `rustc`). cachepot currently requires **Rust 1.56.1**. We recommend you install Rust via [Rustup](https://rustup.rs/).
 
 Build
 -----
@@ -122,7 +122,7 @@ Build with `cargo` and use `ldd` to check that the resulting binary does not dep
 
 #### Linux and Podman
 
-Also you can build the repo with 
+Also you can build the repo with
 [Parity CI Docker image](https://github.com/paritytech/scripts/tree/master/dockerfiles/cachepot-ci):
 
 ```bash
@@ -134,7 +134,7 @@ podman run --rm -it -w /shellhere/cachepot \
 #artifacts can be found in ./target/release
 ```
 
-If you want to reproduce other steps of CI process you can use the following 
+If you want to reproduce other steps of CI process you can use the following
 [guide](https://github.com/paritytech/scripts#reproduce-ci-locally).
 
 #### macOS
