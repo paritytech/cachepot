@@ -19,7 +19,7 @@ use rusoto_s3::{GetObjectOutput, GetObjectRequest, PutObjectRequest, S3Client, S
 use std::io;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use tokio::io::AsyncReadExt as _;
+use tokio::io::AsyncReadExt;
 
 use crate::errors::*;
 
@@ -84,13 +84,13 @@ impl S3Cache {
 
     async fn read_object_output(output: GetObjectOutput) -> Result<Cache> {
         let body = output.body.context("no HTTP body")?;
+        let mut body_bytes = Vec::new();
         let mut body_reader = body.into_async_read();
-        let mut body = Vec::new();
         body_reader
-            .read_to_end(&mut body)
+            .read_to_end(&mut body_bytes)
             .await
             .context("failed to read HTTP body")?;
-        let hit = CacheRead::from(io::Cursor::new(body))?;
+        let hit = CacheRead::from(io::Cursor::new(body_bytes))?;
         Ok(Cache::Hit(hit))
     }
 
