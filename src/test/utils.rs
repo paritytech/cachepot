@@ -246,10 +246,9 @@ impl TestFixture {
 }
 
 pub fn single_threaded_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new()
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .basic_scheduler()
-        .core_threads(1)
+        .worker_threads(1)
         .build()
         .unwrap()
 }
@@ -267,7 +266,7 @@ where
     T: Future<Output = O>,
 {
     fn wait(self) -> O {
-        let mut rt = single_threaded_runtime();
+        let rt = single_threaded_runtime();
         rt.block_on(self)
     }
 }
