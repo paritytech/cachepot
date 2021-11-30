@@ -197,7 +197,7 @@ lazy_static! {
 /// Version number for cache key.
 const CACHE_VERSION: &[u8] = b"6";
 
-/// Get paths for all source files listed in rustc's dep-info output.
+/// Get absolute paths for all source files listed in rustc's dep-info output.
 async fn get_source_files<T>(
     creator: &T,
     crate_name: &str,
@@ -259,18 +259,6 @@ where
             (None, "Cargo.toml"),
             (Some("libp2p_wasm_ext"), "src/websockets.js"),
         ];
-
-        let cachepot_basedir = env_vars
-            .iter()
-            .find(|(key, _)| key.to_str() == Some("CACHEPOT_BASEDIR"))
-            .map(|(_, value)| Path::new(value));
-
-        for file in files.iter_mut() {
-            if let Some(cachepot_basedir) = cachepot_basedir {
-                *file = crate::util::relative_to_basedir(&file, cachepot_basedir, &cwd2).unwrap();
-            }
-        }
-
         for (target_crate_name, file_path) in KNOWN_AUX_DEP_FILES {
             let name_matches = target_crate_name.map_or(true, |x| x == crate_name);
             // If this is a Cargo package, try to get the same path prefix as
@@ -296,7 +284,6 @@ where
         );
         // Just to make sure we capture temp_dir.
         drop(temp_dir);
-        debug!("\nfiles {:?}\n\n", files);
         (files, dep_envs)
     })
 }
@@ -1024,6 +1011,7 @@ ArgData! {
     PassThrough(OsString),
     Target(ArgTarget),
     Unstable(ArgUnstable),
+    RemapPathPrefix(String),
 }
 
 use self::ArgData::*;
@@ -1169,7 +1157,7 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
             Some(Json(_)) => {
                 has_json = true;
             }
-            Some(PassThrough(_)) => (),
+            Some(PassThrough(_) | RemapPathPrefix(_)) => (),
             Some(Target(target)) => match target {
                 ArgTarget::Path(_) | ArgTarget::Unsure(_) => cannot_cache!("target"),
                 ArgTarget::Name(_) => (),
@@ -1349,7 +1337,6 @@ where
                 )
             })
             .collect();
-
         // `filtered_arguments` omits --emit and --out-dir arguments.
         // It's used for invoking rustc with `--emit=dep-info` to get the list of
         // source files for this crate.
@@ -1461,10 +1448,28 @@ where
                 val.hash(&mut HashToDigest { digest: &mut m });
             }
         }
+        let mut arguments = arguments;
         // 8. The cwd of the compile. This will wind up in the rlib.
-        // TODO: this is a hack
-        // TODO: if this changes change CACHE_VERSION
-        // cwd.hash(&mut HashToDigest { digest: &mut m });
+        // This will end up in the rlib only in the case no basedir path
+        // rewriting is done and the build is operating with the absolute paths.
+        if let Ok(_idx) =
+            env_vars.binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CACHEPOT_REMAP_RELATIVE")))
+        {
+            if let Ok(cargo_manifest_dir) =
+                env_vars.binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CARGO_MANIFEST_DIR")))
+            {
+                let (_, ref cargo_home) = env_vars[cargo_manifest_dir];
+                if let Some(cargo_home) = cargo_home.as_os_str().to_str() {
+                    arguments.push(Argument::WithValue(
+                        "--remap-path-prefix",
+                        ArgData::RemapPathPrefix(format!("{}={}", cargo_home, "./")),
+                        ArgDisposition::CanBeSeparated(Some('=' as u8)),
+                    ));
+                }
+            }
+        } else {
+            cwd.hash(&mut HashToDigest { digest: &mut m });
+        }
         // Turn arguments into a simple Vec<OsString> to calculate outputs.
         let flat_os_string_arguments: Vec<OsString> = os_string_arguments
             .into_iter()
@@ -1557,7 +1562,6 @@ where
             .chain(abs_externs)
             .chain(abs_staticlibs)
             .collect();
-        warn!("Inputs {:?}", inputs);
 
         Ok(HashResult {
             key: m.finish(),
@@ -3127,7 +3131,7 @@ proc_macro false
     }
 
     // Verify that the same code located at two different
-    // locations with the properly set `CACHEPOT_BASEDIR`
+    // locations with the properly set `CACHEPOT_REMAP_RELATIVE`
     // ends up with equal hashes.
     #[test]
     fn test_hashes_equal_with_basedir() {
@@ -3169,6 +3173,7 @@ proc_macro false
                         ArgDisposition::Separated,
                     ),
                 ],
+                gcno: None,
                 output_dir: "foo/".into(),
                 externs: vec!["bar.rlib".into()],
                 crate_link_paths: vec![],
@@ -3216,6 +3221,7 @@ proc_macro false
                 crate_link_paths: vec![],
                 staticlibs: vec![project2.tempdir.path().join("libbaz.a")],
                 crate_name: "foo".into(),
+                gcno: None,
                 crate_types: CrateTypes {
                     rlib: true,
                     staticlib: false,
@@ -3226,10 +3232,6 @@ proc_macro false
                 has_json: false,
             },
         });
-
-        let tmp_common_path =
-            common_path::common_path(project1.tempdir.path(), project2.tempdir.path()).unwrap();
-
 
         let creator = new_creator();
         mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
@@ -3247,8 +3249,8 @@ proc_macro false
                     (OsString::from("FOO"), OsString::from("bar")),
                     (OsString::from("CARGO_BLAH"), OsString::from("abc")),
                     (
-                        OsString::from("CACHEPOT_BASEDIR"),
-                        OsString::from(tmp_common_path.clone()),
+                        OsString::from("CACHEPOT_REMAP_RELATIVE"),
+                        OsString::from(""),
                     ),
                 ]
                 .to_vec(),
@@ -3274,8 +3276,8 @@ proc_macro false
                     (OsString::from("FOO"), OsString::from("bar")),
                     (OsString::from("CARGO_BLAH"), OsString::from("abc")),
                     (
-                        OsString::from("CACHEPOT_BASEDIR"),
-                        OsString::from(tmp_common_path),
+                        OsString::from("CACHEPOT_REMAP_RELATIVE"),
+                        OsString::from(""),
                     ),
                 ]
                 .to_vec(),
@@ -3328,8 +3330,9 @@ proc_macro false
 
         // This hashes equally
         assert_eq!(res_project1.key, res_project2.key);
-        // But this also does since the `cwd` is excluded from hash now
-        assert_eq!(res_project1_no_basedir.key, res_project2_no_basedir.key);
+
+        // But this does not
+        assert_neq!(res_project1_no_basedir.key, res_project2_no_basedir.key);
 
         std::env::set_current_dir(current_dir).unwrap();
     }
