@@ -200,8 +200,7 @@ impl CacheWrite {
         pool.spawn_blocking(move || {
             let mut entry = CacheWrite::new();
             for (key, path) in objects {
-                let mut f = fs::File::open(&path)
-                    .with_context(|| format!("failed to open file `{:?}`", path))?;
+                let mut f = fs::File::open(&path)?;
                 let mode = get_file_mode(&f)?;
                 entry
                     .put_object(&key, &mut f, mode)
