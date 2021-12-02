@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::errors::*;
-use clap::{App, AppSettings};
+use clap::AppSettings;
 use std::convert::{TryFrom, TryInto};
 use std::env;
 use std::ffi::OsString;
@@ -176,11 +176,6 @@ pub enum Command {
         /// The environment variables to use for execution.
         env_vars: Vec<(OsString, OsString)>,
     },
-}
-
-/// Get the `App` used for argument parsing.
-pub fn get_app<'a, 'b>() -> App<'a, 'b> {
-    unimplemented!();
 }
 
 /// Parse the commandline into a `Command` to execute.

@@ -87,7 +87,6 @@ pub fn main() {
             for e in e.chain().skip(1) {
                 println!("cachepot: caused by: {}", e);
             }
-            cmdline::get_app().print_help().unwrap();
             println!();
             1
         }
