@@ -14,10 +14,10 @@
 
 use crate::errors::*;
 use clap::{App, AppSettings};
+use std::convert::{TryFrom, TryInto};
 use std::env;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::convert::{TryFrom, TryInto};
 use structopt::{clap::ArgGroup, StructOpt};
 use strum::{EnumVariantNames, VariantNames};
 
@@ -111,12 +111,12 @@ impl TryFrom<Command2> for Command {
         } else if cmd.dist_auth {
             return Ok(Command::DistAuth);
         } else if cmd.package_toolchain.len() == 2 {
-            return Ok(Command::PackageToolchain(cmd.package_toolchain[0].clone(), cmd.package_toolchain[1].clone()));
+            return Ok(Command::PackageToolchain(
+                cmd.package_toolchain[0].clone(),
+                cmd.package_toolchain[1].clone(),
+            ));
         } else {
-            let Command2 {
-                cmd,
-                ..
-            } = cmd;
+            let Command2 { cmd, .. } = cmd;
 
             let mut cmd = cmd.into_iter();
 
@@ -133,8 +133,8 @@ impl TryFrom<Command2> for Command {
                     env_vars.retain(|(k, _v)| k != "LD_PRELOAD" && k != "RUNNING_UNDER_RR");
                 }
 
-                let cwd =
-                    env::current_dir().context("cachepot: Couldn't determine current working directory")?;
+                let cwd = env::current_dir()
+                    .context("cachepot: Couldn't determine current working directory")?;
                 return Ok(Command::Compile {
                     exe,
                     cmdline,
@@ -144,7 +144,7 @@ impl TryFrom<Command2> for Command {
             } else {
                 bail!("No compile command");
             }
-        } 
+        }
     }
 }
 
