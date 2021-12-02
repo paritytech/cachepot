@@ -104,6 +104,8 @@ version-compare = { version = "0.0.11", optional = true }
 
 # test only
 openssl = { version = "0.10", optional = true }
+structopt = "0.3.25"
+strum = { version = "0.23.0", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "1"
