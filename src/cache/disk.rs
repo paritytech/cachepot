@@ -113,6 +113,8 @@ impl Storage for DiskCache {
     async fn clear(&self) -> Result<()> {
         trace!("DiskCache::clear");
         let lru = self.lru.clone();
-        self.pool.spawn_blocking(move || lru.lock().unwrap().clear()).await
+        self.pool.spawn_blocking(move || {
+            lru.lock().unwrap().clear()
+        }).map_err(Into::into).await
     }
 }
