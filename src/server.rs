@@ -1232,7 +1232,6 @@ where
 
             let me = me.clone();
             let cache_write = async move {
-                let _ = &me;
                 if let Some(cache_write) = cache_write {
                     match cache_write.await {
                         Err(e) => {
