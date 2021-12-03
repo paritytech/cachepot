@@ -178,6 +178,8 @@ pub enum Command {
         /// The environment variables to use for execution.
         env_vars: Vec<(OsString, OsString)>,
     },
+    /// Clear the cache of entries.
+    ClearCache,
 }
 
 /// Parse the commandline into a `Command` to execute.

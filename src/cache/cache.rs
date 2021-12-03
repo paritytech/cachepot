@@ -288,6 +288,9 @@ pub trait Storage: Send + Sync {
 
     /// Get the maximum storage size, if applicable.
     async fn max_size(&self) -> Result<Option<u64>>;
+
+    /// Clear the contents of the cache.
+    async fn clear(&self) -> Result<()>;
 }
 
 /// Get a suitable `Storage` implementation from configuration.

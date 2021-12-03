@@ -749,6 +749,12 @@ where
                         Message::WithoutBody(Response::ShuttingDown(Box::new(info)))
                     })
                 }
+                Request::ClearCache => {
+                    debug!("handle_client: clear_cache");
+                    me.clear_cache()
+                        .await
+                        .map(|_| Message::WithoutBody(Response::ClearCacheComplete))
+                }
             }
         })
     }
@@ -851,6 +857,10 @@ where
     /// Zero stats about the cache.
     async fn zero_stats(&self) {
         *self.stats.write().await = ServerStats::default();
+    }
+
+    async fn clear_cache(&self) -> Result<()> {
+        self.storage.clear().await
     }
 
     /// Handle a compile request from a client.
@@ -1542,12 +1552,12 @@ impl ServerInfo {
             self.cache_location,
             name_width = name_width
         );
-        for &(name, val) in &[
+        for (name, val) in [
             ("Cache size", &self.cache_size),
             ("Max cache size", &self.max_cache_size),
         ] {
-            if let Some(val) = *val {
-                let (val, suffix) = match NumberPrefix::binary(val as f64) {
+            if let Some(val) = val {
+                let (val, suffix) = match NumberPrefix::binary(*val as f64) {
                     NumberPrefix::Standalone(bytes) => (bytes.to_string(), "bytes".to_string()),
                     NumberPrefix::Prefixed(prefix, n) => {
                         (format!("{:.0}", n), format!("{}B", prefix))
