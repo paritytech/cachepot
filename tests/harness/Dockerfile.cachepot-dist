@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as bwrap-build
+FROM ubuntu:20.04 as bwrap-build
 RUN apt-get update && \
     apt-get install -y wget xz-utils gcc libcap-dev make && \
     apt-get clean
