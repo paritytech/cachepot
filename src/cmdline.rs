@@ -13,12 +13,14 @@
 // limitations under the License.
 
 use crate::errors::*;
-use clap::AppSettings;
 use std::convert::{TryFrom, TryInto};
 use std::env;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use structopt::{clap::ArgGroup, StructOpt};
+use structopt::{
+    clap::{arg_enum, AppSettings, ArgGroup},
+    StructOpt,
+};
 use strum::{EnumVariantNames, VariantNames};
 
 arg_enum! {
