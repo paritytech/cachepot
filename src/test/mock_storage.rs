@@ -60,8 +60,7 @@ impl Storage for MockStorage {
     async fn max_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
-    fn clear(&self) -> SFuture<()> {
-        self.gets.borrow_mut().clear();
-        Box::new(future::ok(()))
+    async fn clear(&self) -> Result<()> {
+        Err(anyhow!("Storage::clear not implemented for MockStorage"))
     }
 }

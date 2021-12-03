@@ -751,8 +751,7 @@ where
                 }
                 Request::ClearCache => {
                     debug!("handle_client: clear_cache");
-                    self_
-                        .clear_cache()
+                    me.clear_cache()
                         .await
                         .map(|_| Message::WithoutBody(Response::ClearCacheComplete))
                 }
@@ -861,7 +860,7 @@ where
     }
 
     async fn clear_cache(&self) -> Result<()> {
-        self.storage.clear().compat().await
+        self.storage.clear().await
     }
 
     /// Handle a compile request from a client.

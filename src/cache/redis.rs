@@ -102,8 +102,8 @@ impl Storage for RedisCache {
         }
     }
 
-    fn clear(&self) -> SFuture<()> {
+    async fn clear(&self) -> Result<()> {
         trace!("RedisCache::clear - NOT IMPLEMENTED");
-        f_err(anyhow!("RedisCache::clear is not implemented"))
+        Err(anyhow!("RedisCache::clear is not implemented"))
     }
 }
