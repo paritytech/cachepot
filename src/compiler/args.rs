@@ -664,7 +664,6 @@ macro_rules! take_arg {
 mod tests {
     use super::*;
     use itertools::{diff_with, Diff};
-    use std::iter::FromIterator;
 
     macro_rules! arg {
         ($name:ident($x:expr)) => {
