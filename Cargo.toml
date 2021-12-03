@@ -3,7 +3,7 @@ name = "cachepot"
 version = "0.1.0"
 authors = [
     "Bernhard Schuster <bernhard@ahoi.io>",
-    "Igor Matuszewski <xanework@gmail.com>",
+    "Igor Matuszewski <xanewok@gmail.com>",
     "Ted Mielczarek <ted@mielczarek.org>",
     "Alex Crichton <alex@alexcrichton.com>"
 ]
