@@ -101,4 +101,9 @@ impl Storage for RedisCache {
             Err(_) => Ok(None),
         }
     }
+
+    async fn clear(&self) -> Result<()> {
+        trace!("RedisCache::clear - NOT IMPLEMENTED");
+        Err(anyhow!("RedisCache::clear is not implemented"))
+    }
 }
