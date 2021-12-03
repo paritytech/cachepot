@@ -1542,12 +1542,12 @@ impl ServerInfo {
             self.cache_location,
             name_width = name_width
         );
-        for &(name, val) in &[
+        for (name, val) in [
             ("Cache size", &self.cache_size),
             ("Max cache size", &self.max_cache_size),
         ] {
-            if let Some(val) = *val {
-                let (val, suffix) = match NumberPrefix::binary(val as f64) {
+            if let Some(val) = val {
+                let (val, suffix) = match NumberPrefix::binary(*val as f64) {
                     NumberPrefix::Standalone(bytes) => (bytes.to_string(), "bytes".to_string()),
                     NumberPrefix::Prefixed(prefix, n) => {
                         (format!("{:.0}", n), format!("{}B", prefix))
