@@ -670,7 +670,7 @@ where
     tx: mpsc::Sender<ServerMessage>,
 
     /// Information tracking how many services (connected clients) are active.
-    info: ActiveInfo,
+    _info: ActiveInfo,
 }
 
 type CachepotRequest = Message<Request, Body<()>>;
@@ -788,7 +788,7 @@ where
             rt,
             creator: C::new(client),
             tx,
-            info,
+            _info: info,
         }
     }
 
@@ -1746,7 +1746,7 @@ struct WaitUntilZero {
 
 #[derive(Clone)]
 struct ActiveInfo {
-    info: Arc<Mutex<Info>>,
+    _info: Arc<Mutex<Info>>,
 }
 
 struct Info {
@@ -1766,7 +1766,10 @@ impl WaitUntilZero {
     fn new() -> (WaitUntilZero, ActiveInfo) {
         let info = Arc::new(Mutex::new(Info { waker: None }));
 
-        (WaitUntilZero { info: Arc::downgrade(&info) }, ActiveInfo { info })
+        (
+            WaitUntilZero { info: Arc::downgrade(&info) },
+            ActiveInfo { _info: info },
+        )
     }
 }
 

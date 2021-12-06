@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as bwrap-build
+FROM ubuntu:20.04 as bwrap-build
 RUN apt-get update && \
     apt-get install -y wget xz-utils gcc libcap-dev make && \
     apt-get clean
@@ -13,7 +13,7 @@ RUN git clone https://github.com/paritytech/cachepot.git --depth=1 && \
     cd cachepot && \
     cargo build --bin cachepot-dist --release --features="dist-server"
 
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 RUN apt-get update && \
     apt-get install libcap2 libssl1.1 && \
     apt-get clean
