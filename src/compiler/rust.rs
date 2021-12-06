@@ -1452,8 +1452,8 @@ where
         // 8. The cwd of the compile. This will wind up in the rlib.
         // This will end up in the rlib only in the case no basedir path
         // rewriting is done and the build is operating with the absolute paths.
-        if let Ok(_idx) =
-            env_vars.binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CACHEPOT_REMAP_RELATIVE")))
+        if let Ok(_idx) = env_vars
+            .binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CACHEPOT_REMAP_RELATIVE")))
         {
             if let Ok(cargo_manifest_dir) =
                 env_vars.binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CARGO_MANIFEST_DIR")))
