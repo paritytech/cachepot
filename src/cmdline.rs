@@ -70,6 +70,10 @@ pub struct Command2 {
     #[structopt(short, long, group = "flags")]
     show_stats: bool,
 
+    /// clear the contents of the on-disk cache
+    #[structopt(long, group = "flags")]
+    clear_cache: bool,
+
     /// package toolchain for distributed compilation
     #[structopt(
         long,
@@ -112,6 +116,8 @@ impl TryFrom<Command2> for Command {
             return Ok(Command::DistStatus);
         } else if cmd.dist_auth {
             return Ok(Command::DistAuth);
+        } else if cmd.clear_cache {
+            return Ok(Command::ClearCache);
         } else if cmd.package_toolchain.len() == 2 {
             return Ok(Command::PackageToolchain(
                 cmd.package_toolchain[0].clone(),
