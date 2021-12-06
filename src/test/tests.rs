@@ -293,12 +293,12 @@ fn test_server_port_in_use() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let s = String::from_utf8_lossy(&output.stderr);
-    const MSG: &str = "Server startup failed:";
-    assert!(
-        s.contains(MSG),
-        "Output did not contain '{}':\n========\n{}\n========",
-        MSG,
-        s
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    eprintln!(
+        "=====stdout=====\n{}\n=====stderr=====\n{}\n================",
+        stdout, stderr,
     );
+    const MSG: &str = "Server startup failed:";
+    assert!(stderr.contains(MSG), "stderr did not contain '{}':", MSG);
 }
