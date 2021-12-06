@@ -48,17 +48,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             rustc: 1.56.1 # Oldest supported version, keep in sync with README.md
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             rustc: 1.56.1
             extra_desc: dist-server
             extra_args: --no-default-features --features=dist-tests test_dist_ -- --test-threads 1
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             rustc: stable
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             rustc: beta
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             rustc: nightly
             allow_failure: true
             extra_args: --features=unstable
@@ -83,7 +83,7 @@ jobs:
   smoke:
     name: smoke test ${{ matrix.rustc || 'stable' }} ${{ matrix.target_repository }}
     needs: [build]
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       matrix:
