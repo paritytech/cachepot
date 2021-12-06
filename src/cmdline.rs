@@ -101,35 +101,33 @@ impl TryFrom<Command2> for Command {
 
     fn try_from(cmd: Command2) -> Result<Self> {
         if Some("1") == cmd.internal_start_server.as_deref() {
-            return Ok(Command::InternalStartServer);
+            Ok(Command::InternalStartServer)
         } else if cmd.show_stats {
-            return Ok(Command::ShowStats(cmd.stats_format));
+            Ok(Command::ShowStats(cmd.stats_format))
         } else if cmd.dist_status {
-            return Ok(Command::DistStatus);
+            Ok(Command::DistStatus)
         } else if cmd.zero_stats {
-            return Ok(Command::ZeroStats);
+            Ok(Command::ZeroStats)
         } else if cmd.start_server {
-            return Ok(Command::StartServer);
+            Ok(Command::StartServer)
         } else if cmd.stop_server {
-            return Ok(Command::StopServer);
-        } else if cmd.dist_status {
-            return Ok(Command::DistStatus);
+            Ok(Command::StopServer)
         } else if cmd.dist_auth {
-            return Ok(Command::DistAuth);
+            Ok(Command::DistAuth)
         } else if cmd.clear_cache {
-            return Ok(Command::ClearCache);
+            Ok(Command::ClearCache)
         } else if cmd.package_toolchain.len() == 2 {
-            return Ok(Command::PackageToolchain(
+            Ok(Command::PackageToolchain(
                 cmd.package_toolchain[0].clone(),
                 cmd.package_toolchain[1].clone(),
-            ));
+            ))
         } else {
             let Command2 { cmd, .. } = cmd;
 
             let mut cmd = cmd.into_iter();
 
             if let Some(exe) = cmd.next() {
-                let cmdline = cmd.map(|s| s.to_owned()).collect::<Vec<_>>();
+                let cmdline = cmd.map(|s| s).collect::<Vec<_>>();
                 let mut env_vars = env::vars_os().collect::<Vec<_>>();
 
                 // If we're running under rr, avoid the `LD_PRELOAD` bits, as it will
@@ -143,12 +141,12 @@ impl TryFrom<Command2> for Command {
 
                 let cwd = env::current_dir()
                     .context("cachepot: Couldn't determine current working directory")?;
-                return Ok(Command::Compile {
+                Ok(Command::Compile {
                     exe,
                     cmdline,
                     cwd,
                     env_vars,
-                });
+                })
             } else {
                 bail!("No compile command");
             }
