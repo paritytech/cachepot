@@ -1,0 +1,6 @@
+!src
+!tests
+!Cargo.toml
+!Cargo.lock
+.git
+target/
