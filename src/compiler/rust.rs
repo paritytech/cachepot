@@ -1011,6 +1011,7 @@ ArgData! {
     PassThrough(OsString),
     Target(ArgTarget),
     Unstable(ArgUnstable),
+    RemapPathPrefix(String),
 }
 
 use self::ArgData::*;
@@ -1156,7 +1157,7 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
             Some(Json(_)) => {
                 has_json = true;
             }
-            Some(PassThrough(_)) => (),
+            Some(PassThrough(_) | RemapPathPrefix(_)) => (),
             Some(Target(target)) => match target {
                 ArgTarget::Path(_) | ArgTarget::Unsure(_) => cannot_cache!("target"),
                 ArgTarget::Name(_) => (),
@@ -1447,8 +1448,28 @@ where
                 val.hash(&mut HashToDigest { digest: &mut m });
             }
         }
+        let mut arguments = arguments;
         // 8. The cwd of the compile. This will wind up in the rlib.
-        cwd.hash(&mut HashToDigest { digest: &mut m });
+        // This will end up in the rlib only in the case no basedir path
+        // rewriting is done and the build is operating with the absolute paths.
+        if let Ok(_idx) = env_vars
+            .binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CACHEPOT_REMAP_RELATIVE")))
+        {
+            if let Ok(cargo_manifest_dir) =
+                env_vars.binary_search_by(|(ref k, _)| k.cmp(&OsString::from("CARGO_MANIFEST_DIR")))
+            {
+                let (_, ref cargo_home) = env_vars[cargo_manifest_dir];
+                if let Some(cargo_home) = cargo_home.as_os_str().to_str() {
+                    arguments.push(Argument::WithValue(
+                        "--remap-path-prefix",
+                        ArgData::RemapPathPrefix(format!("{}={}", cargo_home, "./")),
+                        ArgDisposition::CanBeSeparated(Some('=' as u8)),
+                    ));
+                }
+            }
+        } else {
+            cwd.hash(&mut HashToDigest { digest: &mut m });
+        }
         // Turn arguments into a simple Vec<OsString> to calculate outputs.
         let flat_os_string_arguments: Vec<OsString> = os_string_arguments
             .into_iter()
@@ -3107,6 +3128,208 @@ proc_macro false
             .collect::<Vec<_>>();
         out.sort();
         assert_eq!(out, vec!["foo.a", "foo.rlib", "foo.rmeta"]);
+    }
+
+    // Verify that the same code located at two different
+    // locations with the properly set `CACHEPOT_REMAP_RELATIVE`
+    // ends up with equal hashes.
+    #[test]
+    fn test_hashes_equal_with_basedir() {
+        let _ = env_logger::Builder::new().is_test(true).try_init();
+        let project1 = TestFixture::new();
+        let project2 = TestFixture::new();
+
+        const FAKE_DIGEST: &str = "abcd1234";
+
+        // We'll just use empty files for each of these.
+        for s in ["foo.rs", "bar.rs", "bar.rlib", "libbaz.a"].iter() {
+            project1.touch(s).unwrap();
+            project2.touch(s).unwrap();
+        }
+
+        let mut emit = HashSet::new();
+        emit.insert("link".to_string());
+        emit.insert("metadata".to_string());
+
+        let hasher_project1 = Box::new(RustHasher {
+            executable: "rustc".into(),
+            host: "x86-64-unknown-unknown-unknown".to_owned(),
+            sysroot: project1.tempdir.path().join("sysroot"),
+            compiler_shlibs_digests: vec![FAKE_DIGEST.to_owned()],
+            #[cfg(feature = "dist-client")]
+            rlib_dep_reader: None,
+            parsed_args: ParsedArguments {
+                arguments: vec![
+                    Argument::Raw("a".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("xyz".into()),
+                        ArgDisposition::Separated,
+                    ),
+                    Argument::Raw("b".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("abc".into()),
+                        ArgDisposition::Separated,
+                    ),
+                ],
+                gcno: None,
+                output_dir: "foo/".into(),
+                externs: vec!["bar.rlib".into()],
+                crate_link_paths: vec![],
+                staticlibs: vec![project1.tempdir.path().join("libbaz.a")],
+                crate_name: "foo".into(),
+                crate_types: CrateTypes {
+                    rlib: true,
+                    staticlib: false,
+                },
+                dep_info: None,
+                emit,
+                color_mode: ColorMode::Auto,
+                has_json: false,
+            },
+        });
+
+        let mut emit = HashSet::new();
+        emit.insert("link".to_string());
+        emit.insert("metadata".to_string());
+
+        let hasher_project2 = Box::new(RustHasher {
+            executable: "rustc".into(),
+            host: "x86-64-unknown-unknown-unknown".to_owned(),
+            sysroot: project2.tempdir.path().join("sysroot"),
+            compiler_shlibs_digests: vec![FAKE_DIGEST.to_owned()],
+            #[cfg(feature = "dist-client")]
+            rlib_dep_reader: None,
+            parsed_args: ParsedArguments {
+                arguments: vec![
+                    Argument::Raw("a".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("xyz".into()),
+                        ArgDisposition::Separated,
+                    ),
+                    Argument::Raw("b".into()),
+                    Argument::WithValue(
+                        "--cfg",
+                        ArgData::PassThrough("abc".into()),
+                        ArgDisposition::Separated,
+                    ),
+                ],
+                output_dir: "foo/".into(),
+                externs: vec!["bar.rlib".into()],
+                crate_link_paths: vec![],
+                staticlibs: vec![project2.tempdir.path().join("libbaz.a")],
+                crate_name: "foo".into(),
+                gcno: None,
+                crate_types: CrateTypes {
+                    rlib: true,
+                    staticlib: false,
+                },
+                dep_info: None,
+                emit,
+                color_mode: ColorMode::Auto,
+                has_json: false,
+            },
+        });
+
+        let creator = new_creator();
+        mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator, &["foo.rlib", "foo.a"]);
+        let runtime = single_threaded_runtime();
+        let pool = runtime.handle().clone();
+        let res_project1 = hasher_project1
+            .clone()
+            .generate_hash_key(
+                &creator,
+                project1.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                    (
+                        OsString::from("CACHEPOT_REMAP_RELATIVE"),
+                        OsString::from(""),
+                    ),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let creator_project2 = new_creator();
+        mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
+        let res_project2 = hasher_project2
+            .clone()
+            .generate_hash_key(
+                &creator_project2,
+                project2.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                    (
+                        OsString::from("CACHEPOT_REMAP_RELATIVE"),
+                        OsString::from(""),
+                    ),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let creator = new_creator();
+        mock_dep_info(&creator, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator, &["foo.rlib", "foo.a"]);
+        let res_project1_no_basedir = hasher_project1
+            .generate_hash_key(
+                &creator,
+                project1.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        let creator_project2 = new_creator();
+        mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
+        mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
+        let res_project2_no_basedir = hasher_project2
+            .generate_hash_key(
+                &creator_project2,
+                project2.tempdir.path().to_owned(),
+                [
+                    (OsString::from("CARGO_PKG_NAME"), OsString::from("foo")),
+                    (OsString::from("FOO"), OsString::from("bar")),
+                    (OsString::from("CARGO_BLAH"), OsString::from("abc")),
+                ]
+                .to_vec(),
+                false,
+                &pool,
+                false,
+            )
+            .wait()
+            .unwrap();
+
+        // This hashes equally
+        assert_eq!(res_project1.key, res_project2.key);
+
+        // But this does not
+        assert_neq!(res_project1_no_basedir.key, res_project2_no_basedir.key);
     }
 
     fn hash_key<F>(
