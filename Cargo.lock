@@ -363,7 +363,6 @@ dependencies = [
  "bytes 1.0.0",
  "cc",
  "chrono",
- "clap",
  "counted-array",
  "crossbeam-utils 0.8.1",
  "daemonize",
