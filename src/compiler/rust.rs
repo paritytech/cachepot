@@ -3138,7 +3138,6 @@ proc_macro false
         let _ = env_logger::Builder::new().is_test(true).try_init();
         let project1 = TestFixture::new();
         let project2 = TestFixture::new();
-        let current_dir = std::env::current_dir().unwrap();
 
         const FAKE_DIGEST: &str = "abcd1234";
 
@@ -3239,7 +3238,6 @@ proc_macro false
         mock_file_names(&creator, &["foo.rlib", "foo.a"]);
         let runtime = single_threaded_runtime();
         let pool = runtime.handle().clone();
-        std::env::set_current_dir(project1.tempdir.path()).unwrap();
         let res_project1 = hasher_project1
             .clone()
             .generate_hash_key(
@@ -3265,7 +3263,6 @@ proc_macro false
         let creator_project2 = new_creator();
         mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
         mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
-        std::env::set_current_dir(project2.tempdir.path()).unwrap();
         let res_project2 = hasher_project2
             .clone()
             .generate_hash_key(
@@ -3333,8 +3330,6 @@ proc_macro false
 
         // But this does not
         assert_neq!(res_project1_no_basedir.key, res_project2_no_basedir.key);
-
-        std::env::set_current_dir(current_dir).unwrap();
     }
 
     fn hash_key<F>(
