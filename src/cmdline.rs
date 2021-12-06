@@ -127,7 +127,7 @@ impl TryFrom<Command2> for Command {
             let mut cmd = cmd.into_iter();
 
             if let Some(exe) = cmd.next() {
-                let cmdline = cmd.map(|s| s).collect::<Vec<_>>();
+                let cmdline = cmd.collect::<Vec<_>>();
                 let mut env_vars = env::vars_os().collect::<Vec<_>>();
 
                 // If we're running under rr, avoid the `LD_PRELOAD` bits, as it will
