@@ -3138,6 +3138,7 @@ proc_macro false
         let _ = env_logger::Builder::new().is_test(true).try_init();
         let project1 = TestFixture::new();
         let project2 = TestFixture::new();
+        let current_dir = std::env::current_dir().unwrap();
 
         const FAKE_DIGEST: &str = "abcd1234";
 
@@ -3261,7 +3262,6 @@ proc_macro false
             .wait()
             .unwrap();
 
-        let current_dir = std::env::current_dir().unwrap();
         let creator_project2 = new_creator();
         mock_dep_info(&creator_project2, &["foo.rs", "bar.rs"]);
         mock_file_names(&creator_project2, &["foo.rlib", "foo.a"]);
