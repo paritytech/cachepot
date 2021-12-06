@@ -1764,9 +1764,12 @@ impl Drop for Info {
 impl WaitUntilZero {
     #[rustfmt::skip]
     fn new() -> (WaitUntilZero, ActiveInfo) {
-        let _info = Arc::new(Mutex::new(Info { waker: None }));
+        let info = Arc::new(Mutex::new(Info { waker: None }));
 
-        (WaitUntilZero { info: Arc::downgrade(&_info) }, ActiveInfo { _info })
+        (
+            WaitUntilZero { info: Arc::downgrade(&info) },
+            ActiveInfo { _info: info },
+        )
     }
 }
 
