@@ -9,9 +9,11 @@ use std::net::{self, IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use assert_cmd::prelude::*;
 #[cfg(feature = "dist-server")]
 use nix::{
@@ -39,6 +41,8 @@ const SCHEDULER_PORT: u16 = 10500;
 const SERVER_PORT: u16 = 12345; // arbitrary
 
 const TC_CACHE_SIZE: u64 = 1024 * 1024 * 1024; // 1 gig
+
+const CONTAINER_RUNTIME: &str = "docker";
 
 pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     // Don't run this with run() because on Windows `wait_with_output`
@@ -193,6 +197,78 @@ pub enum ServerHandle {
     Process { pid: Pid, url: HTTPUrl },
 }
 
+// #[cfg(feature = "dist-server")]
+// impl Drop for ServerHandle {
+//     fn drop(&mut self) {
+//         return;
+//         let mut did_err = false;
+
+//         // Panicking halfway through drop would either abort (if it's a double panic) or leave us with
+//         // resources that aren't yet cleaned up. Instead, do as much as possible then decide what to do
+//         // at the end - panic (if not already doing so) or let the panic continue
+//         macro_rules! droperr {
+//             ($e:expr) => {
+//                 match $e {
+//                     Ok(()) => (),
+//                     Err(e) => {
+//                         did_err = true;
+//                         eprintln!("Error with {}: {}", stringify!($e), e)
+//                     }
+//                 }
+//             };
+//         }
+
+//         let mut outputs = vec![];
+//         let mut logs = vec![];
+
+//         match self {
+//             ServerHandle::Container { cid, .. } => {
+//                 let cid = cid.as_ref();
+//                 droperr!(Command::new(CONTAINER_RUNTIME)
+//                     .args(&["logs", cid])
+//                     .output()
+//                     .map(|o| logs.push((cid, o))));
+//                 droperr!(Command::new(CONTAINER_RUNTIME)
+//                     .args(&["kill", cid])
+//                     .output()
+//                     .map(|o| outputs.push((cid, o))));
+//                 droperr!(Command::new(CONTAINER_RUNTIME)
+//                     .args(&["rm", "-f", cid])
+//                     .output()
+//                     .map(|o| outputs.push((cid, o))));
+//             }
+//             ServerHandle::Process { pid, .. } => {
+//                 droperr!(nix::sys::signal::kill(*pid, Signal::SIGINT));
+//                 thread::sleep(Duration::from_millis(100));
+//                 let mut killagain = true; // Default to trying to kill again, e.g. if there was an error waiting on the pid
+//                 droperr!(
+//                     nix::sys::wait::waitpid(*pid, Some(WaitPidFlag::WNOHANG)).map(|ws| {
+//                         if ws != WaitStatus::StillAlive {
+//                             killagain = false;
+//                             // exits.push(ws)
+//                         }
+//                     })
+//                 );
+//                 if killagain {
+//                     eprintln!("SIGINT didn't kill process, trying SIGKILL");
+//                     droperr!(nix::sys::signal::kill(*pid, Signal::SIGKILL));
+//                     droperr!(nix::sys::wait::waitpid(*pid, Some(WaitPidFlag::WNOHANG))
+//                         .map_err(|e| e.to_string())
+//                         .and_then(|ws| if ws == WaitStatus::StillAlive {
+//                             Err("process alive after sigkill".to_owned())
+//                         } else {
+//                             // exits.push(ws);
+//                             Ok(())
+//                         }));
+//                 }
+//             }
+//         }
+//         if did_err && !thread::panicking() {
+//             panic!("Encountered failures during dist system teardown")
+//         }
+//     }
+// }
+
 #[cfg(feature = "dist-server")]
 pub struct DistSystem {
     cachepot_dist: PathBuf,
@@ -201,13 +277,14 @@ pub struct DistSystem {
     scheduler_name: Option<String>,
     server_names: Vec<String>,
     server_pids: Vec<Pid>,
+    servers: Vec<Arc<ServerHandle>>,
 }
 
 #[cfg(feature = "dist-server")]
 impl DistSystem {
     pub fn new(cachepot_dist: &Path, tmpdir: &Path) -> Self {
         // Make sure the docker image is available, building it if necessary
-        let mut child = Command::new("docker")
+        let mut child = Command::new(CONTAINER_RUNTIME)
             .args(&["build", "-q", "-t", DIST_IMAGE, "-"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -222,6 +299,11 @@ impl DistSystem {
             .unwrap();
         let output = child.wait_with_output().unwrap();
         check_output(&output);
+        let image_id = String::from_utf8_lossy(&output.stdout);
+        eprintln!(
+            "Built cachepot-dist test image with ID: {}",
+            image_id.trim()
+        );
 
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
@@ -233,6 +315,7 @@ impl DistSystem {
             scheduler_name: None,
             server_names: vec![],
             server_pids: vec![],
+            servers: vec![],
         }
     }
 
@@ -249,7 +332,7 @@ impl DistSystem {
 
         // Create the scheduler
         let scheduler_name = make_container_name("scheduler");
-        let output = Command::new("docker")
+        let output = Command::new(CONTAINER_RUNTIME)
             .args(&[
                 "run",
                 "--name",
@@ -282,11 +365,19 @@ impl DistSystem {
             ])
             .output()
             .unwrap();
-        self.scheduler_name = Some(scheduler_name);
 
+        eprintln!("Attempted scheduler spawn of: {}", &scheduler_name);
         check_output(&output);
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let scheduler_id = stdout;
+        eprintln!("Scheduler spawned with ID: {}", &scheduler_id);
 
+        self.scheduler_name = Some(scheduler_name);
         let scheduler_url = self.scheduler_url();
+        let scheduler = Arc::new(ServerHandle::Container {
+            cid: scheduler_id,
+            url: scheduler_url.clone(),
+        });
         wait_for_http(scheduler_url, Duration::from_millis(100), MAX_STARTUP_WAIT);
         wait_for(
             || {
@@ -309,13 +400,13 @@ impl DistSystem {
         );
     }
 
-    pub fn add_server(&mut self) -> ServerHandle {
-        let server_cfg_relpath = format!("server-cfg-{}.json", self.server_names.len());
+    pub fn add_server(&mut self) -> Arc<ServerHandle> {
+        let server_cfg_relpath = format!("server-cfg-{}.json", self.servers.len());
         let server_cfg_path = self.tmpdir.join(&server_cfg_relpath);
         let server_cfg_container_path = Path::new(CONFIGS_CONTAINER_PATH).join(server_cfg_relpath);
 
         let server_name = make_container_name("server");
-        let output = Command::new("docker")
+        let output = Command::new(CONTAINER_RUNTIME)
             .args(&[
                 "run",
                 // Important for the bubblewrap builder
@@ -364,18 +455,19 @@ impl DistSystem {
         let url = HTTPUrl::from_url(
             reqwest::Url::parse(&format!("https://{}:{}", server_ip, SERVER_PORT)).unwrap(),
         );
-        let handle = ServerHandle::Container {
+        let handle = Arc::new(ServerHandle::Container {
             cid: server_name,
             url,
-        };
+        });
         self.wait_server_ready(&handle);
+        self.servers.push(Arc::clone(&handle));
         handle
     }
 
     pub fn add_custom_server<S: dist::ServerIncoming + 'static>(
         &mut self,
         handler: S,
-    ) -> ServerHandle {
+    ) -> Arc<ServerHandle> {
         let server_addr = {
             let ip = self.host_interface_ip();
             let listener = net::TcpListener::bind(SocketAddr::from((ip, 0))).unwrap();
@@ -399,15 +491,16 @@ impl DistSystem {
 
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
-        let handle = ServerHandle::Process { pid, url };
+        let handle = Arc::new(ServerHandle::Process { pid, url });
         self.wait_server_ready(&handle);
+        self.servers.push(Arc::clone(&handle));
         handle
     }
 
     pub fn restart_server(&mut self, handle: &ServerHandle) {
         match handle {
             ServerHandle::Container { cid, url: _ } => {
-                let output = Command::new("docker")
+                let output = Command::new(CONTAINER_RUNTIME)
                     .args(&["restart", cid])
                     .output()
                     .unwrap();
@@ -465,7 +558,14 @@ impl DistSystem {
     }
 
     fn container_ip(&self, name: &str) -> IpAddr {
-        let output = Command::new("docker")
+        // dbg!(Command::new("docker").arg("ps").output());
+        // let output = Command::new("docker").arg("inspect").arg(name).output().unwrap();
+        // eprintln!("inspect: {}", String::from_utf8_lossy(&output.stdout));
+        // let output = Command::new("docker").arg("logs").arg(name).output().unwrap();
+        // eprintln!("logs: stdout {}", String::from_utf8_lossy(&output.stdout));
+        // eprintln!("logs: stderr {}", String::from_utf8_lossy(&output.stderr));
+
+        let output = Command::new(CONTAINER_RUNTIME)
             .args(&[
                 "inspect",
                 "--format",
@@ -476,12 +576,22 @@ impl DistSystem {
             .unwrap();
         check_output(&output);
         let stdout = String::from_utf8(output.stdout).unwrap();
-        stdout.trim().to_owned().parse().unwrap()
+        eprintln!(
+            "stderr: {}\nstdout: {}",
+            String::from_utf8_lossy(&output.stderr),
+            &stdout
+        );
+        stdout
+            .trim()
+            .to_owned()
+            .parse()
+            .context("Couldn't parse container IP address")
+            .unwrap()
     }
 
     // The interface that the host sees on the docker network (typically 'docker0')
     fn host_interface_ip(&self) -> IpAddr {
-        let output = Command::new("docker")
+        let output = Command::new(CONTAINER_RUNTIME)
             .args(&[
                 "inspect",
                 "--format",
@@ -522,29 +632,29 @@ impl Drop for DistSystem {
         let mut exits = vec![];
 
         if let Some(scheduler_name) = self.scheduler_name.as_ref() {
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["logs", scheduler_name])
                 .output()
                 .map(|o| logs.push((scheduler_name, o))));
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["kill", scheduler_name])
                 .output()
                 .map(|o| outputs.push((scheduler_name, o))));
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["rm", "-f", scheduler_name])
                 .output()
                 .map(|o| outputs.push((scheduler_name, o))));
         }
         for server_name in self.server_names.iter() {
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["logs", server_name])
                 .output()
                 .map(|o| logs.push((server_name, o))));
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["kill", server_name])
                 .output()
                 .map(|o| outputs.push((server_name, o))));
-            droperr!(Command::new("docker")
+            droperr!(Command::new(CONTAINER_RUNTIME)
                 .args(&["rm", "-f", server_name])
                 .output()
                 .map(|o| outputs.push((server_name, o))));
@@ -629,6 +739,7 @@ fn make_container_name(tag: &str) -> String {
 }
 
 fn check_output(output: &Output) {
+    // dbg!(output);
     if !output.status.success() {
         println!("{}\n\n[BEGIN STDOUT]\n===========\n{}\n===========\n[FIN STDOUT]\n\n[BEGIN STDERR]\n===========\n{}\n===========\n[FIN STDERR]\n\n",
             output.status, String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));

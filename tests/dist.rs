@@ -25,6 +25,7 @@ use cachepot::errors::*;
 mod harness;
 
 fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_path: &Path) {
+    use std::process::Stdio;
     let envs: Vec<(_, &OsStr)> = vec![
         ("RUST_BACKTRACE", "1".as_ref()),
         ("RUST_LOG", "cachepot=trace".as_ref()),
@@ -34,13 +35,20 @@ fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_pa
     let source_file = "x.c";
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(CACHEPOT_TEST_DEFINE)\n#error CACHEPOT_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
-    cachepot_command()
+    eprintln!("Written source");
+    let mut cmd = cachepot_command();
+    cmd
         .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
         .args(&["-c", "-DCACHEPOT_TEST_DEFINE"])
         .arg(tmpdir.join(source_file))
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped());
+
+    dbg!(&cmd);
+    cmd
         .assert()
         .success();
 }
@@ -59,6 +67,8 @@ pub fn dist_test_cachepot_client_cfg(
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 fn test_dist_basic() {
+    let _ = env_logger::try_init();
+
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -67,8 +77,11 @@ fn test_dist_basic() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
+    eprintln!("Created system");
     system.add_scheduler();
+    eprintln!("Added scheduler");
     system.add_server();
+    eprintln!("Added server and scheduler");
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -76,8 +89,11 @@ fn test_dist_basic() {
     let cachepot_cached_cfg_path = tmpdir.join("cachepot-cached-cfg");
 
     stop_local_daemon();
+    eprintln!("Stopped local daemon");
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
+    eprintln!("Started local daemon");
     basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    eprintln!("Finished basic compile");
 
     get_stats(|info| {
         assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
@@ -93,6 +109,8 @@ fn test_dist_basic() {
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 fn test_dist_restartedserver() {
+    let _ = env_logger::try_init();
+
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -130,6 +148,8 @@ fn test_dist_restartedserver() {
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 fn test_dist_nobuilder() {
+    let _ = env_logger::try_init();
+
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -196,6 +216,8 @@ impl ServerIncoming for FailingServer {
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 fn test_dist_failingserver() {
+    let _ = env_logger::try_init();
+
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
