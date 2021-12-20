@@ -9,6 +9,7 @@ extern crate log;
 extern crate serde_derive;
 
 use anyhow::{bail, Context, Error, Result};
+use async_trait::async_trait;
 use cachepot::config::{
     scheduler as scheduler_config, server as server_config, INSECURE_DIST_CLIENT_TOKEN,
 };
@@ -29,7 +30,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use syslog::Facility;
 
@@ -56,10 +57,11 @@ enum AuthSubcommand {
 
 // Only supported on x86_64 Linux machines
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn main() {
+#[tokio::main]
+async fn main() {
     init_logging();
     std::process::exit(match parse() {
-        Ok(cmd) => match run(cmd) {
+        Ok(cmd) => match run(cmd).await {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("cachepot-dist: error: {}", e);
@@ -268,7 +270,7 @@ fn check_jwt_server_token(
         .ok()
 }
 
-fn run(command: Command) -> Result<i32> {
+async fn run(command: Command) -> Result<i32> {
     match command {
         Command::Auth(AuthSubcommand::Base64 { num_bytes }) => {
             let mut bytes = vec![0; num_bytes];
@@ -321,10 +323,10 @@ fn run(command: Command) -> Result<i32> {
                 scheduler_config::ServerAuth::Insecure => {
                     warn!("Scheduler starting with DANGEROUSLY_INSECURE server authentication");
                     let token = INSECURE_DIST_SERVER_TOKEN;
-                    Box::new(move |server_token| check_server_token(server_token, &token))
+                    Arc::new(move |server_token| check_server_token(server_token, &token))
                 }
                 scheduler_config::ServerAuth::Token { token } => {
-                    Box::new(move |server_token| check_server_token(server_token, &token))
+                    Arc::new(move |server_token| check_server_token(server_token, &token))
                 }
                 scheduler_config::ServerAuth::JwtHS256 { secret_key } => {
                     let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)
@@ -341,7 +343,7 @@ fn run(command: Command) -> Result<i32> {
                         sub: None,
                         algorithms: vec![jwt::Algorithm::HS256],
                     };
-                    Box::new(move |server_token| {
+                    Arc::new(move |server_token| {
                         check_jwt_server_token(server_token, &secret_key, &validation)
                     })
                 }
@@ -355,7 +357,8 @@ fn run(command: Command) -> Result<i32> {
                 check_client_auth,
                 check_server_auth,
             );
-            void::unreachable(http_scheduler.start()?);
+            http_scheduler.start().await?;
+            Ok(0)
         }
 
         Command::Server(server_config::Config {
@@ -412,7 +415,8 @@ fn run(command: Command) -> Result<i32> {
                 server,
             )
             .context("Failed to create cachepot HTTP server instance")?;
-            void::unreachable(http_server.start()?)
+            http_server.start().await?;
+            Ok(0)
         }
     }
 }
@@ -510,8 +514,9 @@ impl Scheduler {
     }
 }
 
+#[async_trait]
 impl SchedulerIncoming for Scheduler {
-    fn handle_alloc_job(
+    async fn handle_alloc_job(
         &self,
         requester: &dyn SchedulerOutgoing,
         tc: Toolchain,
@@ -610,6 +615,7 @@ impl SchedulerIncoming for Scheduler {
             need_toolchain,
         } = requester
             .do_assign_job(server_id, job_id, tc, auth.clone())
+            .await
             .with_context(|| {
                 // LOCKS
                 let mut servers = self.servers.lock().unwrap();
@@ -847,6 +853,7 @@ impl Server {
     }
 }
 
+#[async_trait]
 impl ServerIncoming for Server {
     fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
@@ -867,14 +874,15 @@ impl ServerIncoming for Server {
             need_toolchain,
         })
     }
-    fn handle_submit_toolchain(
+    async fn handle_submit_toolchain(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
-        tc_rdr: ToolchainReader,
+        tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
         requester
             .do_update_job_state(job_id, JobState::Ready)
+            .await
             .context("Updating job state failed")?;
         // TODO: need to lock the toolchain until the container has started
         // TODO: can start prepping container
@@ -894,16 +902,17 @@ impl ServerIncoming for Server {
             .map(|_| SubmitToolchainResult::Success)
             .unwrap_or(SubmitToolchainResult::CannotCache))
     }
-    fn handle_run_job(
+    async fn handle_run_job(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,
-        inputs_rdr: InputsReader,
+        inputs_rdr: InputsReader<'_>,
     ) -> Result<RunJobResult> {
         requester
             .do_update_job_state(job_id, JobState::Started)
+            .await
             .context("Updating job state failed")?;
         let tc = self.job_toolchains.lock().unwrap().remove(&job_id);
         let res = match tc {
@@ -923,6 +932,7 @@ impl ServerIncoming for Server {
         };
         requester
             .do_update_job_state(job_id, JobState::Complete)
+            .await
             .context("Updating job state failed")?;
         res
     }

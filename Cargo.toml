@@ -67,7 +67,7 @@ percent-encoding = { version = "2", optional = true }
 rand = "0.8"
 redis = { version = "0.21", optional = true, default-features = false, features = ["aio", "tokio-comp"] }
 regex = "1"
-reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+reqwest = { version = "0.11.7", features = ["json", "blocking"], optional = true }
 retry = "1"
 ring = { version = "0.16", optional = true, features = ["std"] }
 rusoto_core = { version = "0.47", optional = true }
@@ -98,13 +98,14 @@ zstd = "0.6"
 crossbeam-utils = { version = "0.8", optional = true }
 libmount = { version = "0.1.10", optional = true }
 nix = { version = "0.19", optional = true }
-rouille = { version = "3", optional = true, default-features = false, features = ["ssl"] }
 syslog = { version = "5", optional = true }
 void = { version = "1", optional = true }
 version-compare = { version = "0.0.11", optional = true }
+warp = { version = "0.3.2", optional = true, features = ["tls"] }
 
 # test only
 openssl = { version = "0.10", optional = true }
+thiserror = "1.0.30"
 
 [dev-dependencies]
 assert_cmd = "1"
@@ -132,7 +133,7 @@ features = [
 
 [features]
 default = ["all"]
-all = ["dist-client", "redis", "s3", "memcached", "gcs", "azure"]
+all = ["dist-server", "dist-client", "redis", "s3", "memcached", "gcs", "azure"]
 azure = ["chrono", "hyper", "hyperx", "url", "hmac", "md-5", "sha2"]
 s3 = ["chrono", "hyper", "hyper-tls", "hyperx", "reqwest", "rusoto_core", "rusoto_s3", "hmac", "sha-1"]
 gcs = ["chrono", "hyper", "hyperx", "percent-encoding", "reqwest", "ring", "untrusted", "url"]
@@ -143,7 +144,7 @@ unstable = []
 # Enables distributed support in the cachepot client
 dist-client = ["ar", "flate2", "hyper", "hyperx", "reqwest/stream", "url", "sha2", "tokio/fs"]
 # Enables the cachepot-dist binary
-dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest", "rouille", "sha2", "syslog", "void", "version-compare"]
+dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest",  "sha2", "syslog", "void", "version-compare", "warp"]
 # Enables dist tests with external requirements
 dist-tests = ["dist-client", "dist-server"]
 # Run JWK token crypto against openssl ref impl
