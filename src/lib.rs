@@ -25,8 +25,6 @@
 #[macro_use]
 extern crate async_trait;
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate counted_array;
 #[cfg(feature = "jsonwebtoken")]
 use jsonwebtoken as jwt;
@@ -87,7 +85,6 @@ pub fn main() {
             for e in e.chain().skip(1) {
                 println!("cachepot: caused by: {}", e);
             }
-            cmdline::get_app().print_help().unwrap();
             println!();
             1
         }
