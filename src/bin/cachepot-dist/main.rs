@@ -1,8 +1,5 @@
 #![deny(clippy::perf)]
 #![allow(clippy::complexity, clippy::new_without_default)]
-
-#[macro_use]
-extern crate clap;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -20,7 +17,6 @@ use cachepot::dist::{
     UpdateJobStateResult,
 };
 use cachepot::util::daemonize;
-use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonwebtoken as jwt;
 use rand::{rngs::OsRng, RngCore};
 use std::collections::{btree_map, BTreeMap, HashMap, HashSet};
@@ -28,9 +24,12 @@ use std::env;
 use std::io;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use structopt::StructOpt;
 use syslog::Facility;
 
 mod build;
@@ -38,28 +37,75 @@ mod token_check;
 
 pub const INSECURE_DIST_SERVER_TOKEN: &str = "dangerously_insecure_server";
 
+#[derive(StructOpt)]
 enum Command {
     Auth(AuthSubcommand),
-    Scheduler(scheduler_config::Config),
-    Server(server_config::Config),
+    Scheduler(SchedulerSubcommand),
+    Server(ServerSubcommand),
 }
 
+#[derive(StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct SchedulerSubcommand {
+    /// Use the server config file at PATH
+    #[structopt(long, value_name = "PATH")]
+    config: PathBuf,
+
+    /// Log to the syslog with LEVEL
+    #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+    syslog: Option<String>,
+}
+
+#[derive(StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct ServerSubcommand {
+    /// Use the server config file at PATH
+    #[structopt(long, value_name = "PATH")]
+    config: PathBuf,
+
+    /// Log to the syslog with LEVEL
+    #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+    syslog: Option<String>,
+}
+
+#[derive(StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct GenerateSharedToken {
+    /// Use the specified number of bits for randomness
+    #[structopt(long, default_value = "256")]
+    bits: usize,
+}
+
+#[derive(StructOpt)]
+#[structopt(rename_all = "kebab-case")]
+struct GenerateJwtHS256ServerToken {
+    /// Use the key from the scheduler config file
+    #[structopt(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+
+    /// Use specified key to create the token
+    #[structopt(long, value_name = "KEY", required_unless = "config")]
+    secret_key: Option<String>,
+
+    /// Generate a key for the specified server
+    #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
+    server: SocketAddr,
+}
+
+#[derive(StructOpt)]
 enum AuthSubcommand {
-    Base64 {
-        num_bytes: usize,
-    },
-    JwtHS256ServerToken {
-        secret_key: String,
-        server_id: ServerId,
-    },
+    GenerateSharedToken(GenerateSharedToken),
+    GenerateJwtHS256Key,
+    GenerateJwtHS256ServerToken(GenerateJwtHS256ServerToken),
 }
 
 // Only supported on x86_64 Linux machines
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn main() {
     init_logging();
-    std::process::exit(match parse() {
-        Ok(cmd) => match run(cmd) {
+    std::process::exit({
+        let cmd = Command::from_args();
+        match run(cmd) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("cachepot-dist: error: {}", e);
@@ -69,15 +115,6 @@ fn main() {
                 }
                 2
             }
-        },
-        Err(e) => {
-            println!("cachepot-dist: {}", e);
-            for e in e.chain().skip(1) {
-                println!("cachepot-dist: caused by: {}", e);
-            }
-            get_app().print_help().unwrap();
-            println!();
-            1
         }
     });
 }
@@ -85,151 +122,16 @@ fn main() {
 /// These correspond to the values of `log::LevelFilter`.
 const LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
-pub fn get_app<'a, 'b>() -> App<'a, 'b> {
-    App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .subcommand(
-            SubCommand::with_name("auth")
-                .subcommand(SubCommand::with_name("generate-jwt-hs256-key"))
-                .subcommand(
-                    SubCommand::with_name("generate-jwt-hs256-server-token")
-                        .arg(Arg::from_usage(
-                            "--server <SERVER_ADDR> 'Generate a key for the specified server'",
-                        ))
-                        .arg(
-                            Arg::from_usage(
-                                "--secret-key [KEY] 'Use specified key to create the token'",
-                            )
-                            .required_unless("config"),
-                        )
-                        .arg(
-                            Arg::from_usage(
-                                "--config [PATH] 'Use the key from the scheduler config file'",
-                            )
-                            .required_unless("secret-key"),
-                        ),
-                )
-                .subcommand(
-                    SubCommand::with_name("generate-shared-token").arg(
-                        Arg::from_usage(
-                            "--bits [BITS] 'Use the specified number of bits of randomness'",
-                        )
-                        .default_value("256"),
-                    ),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("scheduler")
-                .arg(Arg::from_usage(
-                    "--config <PATH> 'Use the scheduler config file at PATH'",
-                ))
-                .arg(
-                    Arg::from_usage("--syslog <LEVEL> 'Log to the syslog with LEVEL'")
-                        .required(false)
-                        .possible_values(LOG_LEVELS),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("server")
-                .arg(Arg::from_usage(
-                    "--config <PATH> 'Use the server config file at PATH'",
-                ))
-                .arg(
-                    Arg::from_usage("--syslog <LEVEL> 'Log to the syslog with LEVEL'")
-                        .required(false)
-                        .possible_values(LOG_LEVELS),
-                ),
-        )
-}
-
-fn check_init_syslog<'a>(name: &str, matches: &ArgMatches<'a>) {
-    if matches.is_present("syslog") {
-        let level = value_t!(matches, "syslog", log::LevelFilter).unwrap_or_else(|e| e.exit());
-        drop(syslog::init(Facility::LOG_DAEMON, level, Some(name)));
-    }
-}
-
-fn parse() -> Result<Command> {
-    let matches = get_app().get_matches();
-    Ok(match matches.subcommand() {
-        ("auth", Some(matches)) => {
-            Command::Auth(match matches.subcommand() {
-                ("generate-jwt-hs256-key", Some(_matches)) => {
-                    // Size based on https://briansmith.org/rustdoc/ring/hmac/fn.recommended_key_len.html
-                    AuthSubcommand::Base64 { num_bytes: 256 / 8 }
-                }
-                ("generate-jwt-hs256-server-token", Some(matches)) => {
-                    let server_id = ServerId::new(value_t_or_exit!(matches, "server", SocketAddr));
-                    let secret_key = if let Some(config_path) =
-                        matches.value_of("config").map(Path::new)
-                    {
-                        if let Some(config) = scheduler_config::from_path(config_path)? {
-                            match config.server_auth {
-                                scheduler_config::ServerAuth::JwtHS256 { secret_key } => secret_key,
-                                scheduler_config::ServerAuth::Insecure
-                                | scheduler_config::ServerAuth::Token { token: _ } => {
-                                    bail!("Scheduler not configured with JWT HS256")
-                                }
-                            }
-                        } else {
-                            bail!("Could not load config")
-                        }
-                    } else {
-                        matches
-                            .value_of("secret-key")
-                            .expect("missing secret-key in parsed subcommand")
-                            .to_owned()
-                    };
-                    AuthSubcommand::JwtHS256ServerToken {
-                        secret_key,
-                        server_id,
-                    }
-                }
-                ("generate-shared-token", Some(matches)) => {
-                    let bits = value_t_or_exit!(matches, "bits", usize);
-                    if bits % 8 != 0 || bits < 64 || bits > 4096 {
-                        bail!("Number of bits must be divisible by 8, greater than 64 and less than 4096")
-                    }
-                    AuthSubcommand::Base64 {
-                        num_bytes: bits / 8,
-                    }
-                }
-                _ => bail!("No subcommand of auth specified"),
-            })
-        }
-        ("scheduler", Some(matches)) => {
-            let config_path = Path::new(
-                matches
-                    .value_of("config")
-                    .expect("missing config in parsed subcommand"),
-            );
-            check_init_syslog("cachepot-scheduler", &matches);
-            if let Some(config) = scheduler_config::from_path(config_path)? {
-                Command::Scheduler(config)
-            } else {
-                bail!("Could not load config")
-            }
-        }
-        ("server", Some(matches)) => {
-            let config_path = Path::new(
-                matches
-                    .value_of("config")
-                    .expect("missing config in parsed subcommand"),
-            );
-            check_init_syslog("cachepot-buildserver", &matches);
-            if let Some(config) = server_config::from_path(config_path)? {
-                Command::Server(config)
-            } else {
-                bail!("Could not load config")
-            }
-        }
-        _ => bail!("No subcommand specified"),
-    })
+fn check_init_syslog(name: &str, level: &str) -> Result<()> {
+    let level = log::LevelFilter::from_str(level)?;
+    drop(syslog::init(Facility::LOG_DAEMON, level, Some(name)));
+    Ok(())
 }
 
 fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
     format!("{} {}", server_id.addr(), auth_token)
 }
+
 fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerId> {
     let mut split = server_token.splitn(2, |c| c == ' ');
     let server_addr = split.next().and_then(|addr| addr.parse().ok())?;
@@ -270,30 +172,72 @@ fn check_jwt_server_token(
 
 fn run(command: Command) -> Result<i32> {
     match command {
-        Command::Auth(AuthSubcommand::Base64 { num_bytes }) => {
+        Command::Auth(AuthSubcommand::GenerateJwtHS256Key) => {
+            let num_bytes = 256 / 8;
             let mut bytes = vec![0; num_bytes];
             OsRng.fill_bytes(&mut bytes);
             // As long as it can be copied, it doesn't matter if this is base64 or hex etc
             println!("{}", base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD));
             Ok(0)
         }
-        Command::Auth(AuthSubcommand::JwtHS256ServerToken {
-            secret_key,
-            server_id,
-        }) => {
+        Command::Auth(AuthSubcommand::GenerateJwtHS256ServerToken(
+            GenerateJwtHS256ServerToken {
+                config,
+                secret_key,
+                server,
+            },
+        )) => {
+            let server_id = ServerId::new(server);
             let header = jwt::Header::new(jwt::Algorithm::HS256);
+
+            let secret_key = if let Some(config_path) = config {
+                if let Some(config) = scheduler_config::from_path(&config_path)? {
+                    match config.server_auth {
+                        scheduler_config::ServerAuth::JwtHS256 { secret_key } => secret_key,
+                        scheduler_config::ServerAuth::Insecure
+                        | scheduler_config::ServerAuth::Token { token: _ } => {
+                            bail!("Scheduler not configured with JWT HS256")
+                        }
+                    }
+                } else {
+                    bail!("Could not read config");
+                }
+            } else {
+                secret_key
+                    .expect("missing secret-key in parsed subcommand")
+                    .to_owned()
+            };
+
             let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)?;
             let token = create_jwt_server_token(server_id, &header, &secret_key)
                 .context("Failed to create server token")?;
             println!("{}", token);
             Ok(0)
         }
+        Command::Auth(AuthSubcommand::GenerateSharedToken(GenerateSharedToken { bits })) => {
+            let num_bytes = bits / 8;
+            let mut bytes = vec![0; num_bytes];
+            OsRng.fill_bytes(&mut bytes);
+            // As long as it can be copied, it doesn't matter if this is base64 or hex etc
+            println!("{}", base64::encode_config(&bytes, base64::URL_SAFE_NO_PAD));
+            Ok(0)
+        }
 
-        Command::Scheduler(scheduler_config::Config {
-            public_addr,
-            client_auth,
-            server_auth,
-        }) => {
+        Command::Scheduler(SchedulerSubcommand { config, syslog }) => {
+            let scheduler_config::Config {
+                public_addr,
+                client_auth,
+                server_auth,
+            } = if let Some(config) = scheduler_config::from_path(&config)? {
+                config
+            } else {
+                bail!("Could not load config!");
+            };
+
+            if let Some(syslog) = syslog {
+                check_init_syslog("cachepot-buildserver", &syslog)?;
+            }
+
             let check_client_auth: Box<dyn dist::http::ClientAuthCheck> = match client_auth {
                 scheduler_config::ClientAuth::Insecure => Box::new(token_check::EqCheck::new(
                     INSECURE_DIST_CLIENT_TOKEN.to_owned(),
@@ -358,14 +302,24 @@ fn run(command: Command) -> Result<i32> {
             void::unreachable(http_scheduler.start()?);
         }
 
-        Command::Server(server_config::Config {
-            builder,
-            cache_dir,
-            public_addr,
-            scheduler_url,
-            scheduler_auth,
-            toolchain_cache_size,
-        }) => {
+        Command::Server(ServerSubcommand { config, syslog }) => {
+            let server_config::Config {
+                builder,
+                cache_dir,
+                public_addr,
+                scheduler_url,
+                scheduler_auth,
+                toolchain_cache_size,
+            } = if let Some(config) = server_config::from_path(&config)? {
+                config
+            } else {
+                bail!("Could not load config!");
+            };
+
+            if let Some(syslog) = syslog {
+                check_init_syslog("cachepot-build-server", &syslog)?;
+            }
+
             let builder: Box<dyn dist::BuilderIncoming> = match builder {
                 server_config::BuilderType::Docker => {
                     Box::new(build::DockerBuilder::new().context("Docker builder failed to start")?)
