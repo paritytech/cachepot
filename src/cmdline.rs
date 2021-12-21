@@ -91,7 +91,7 @@ pub struct Command2 {
 
     /// set output format of statistics
     #[structopt(long, default_value = "text", possible_values = StatsFormat::VARIANTS)]
-    stats_format: Option<StatsFormat>,
+    stats_format: StatsFormat,
 
     cmd: Vec<OsString>,
 }
