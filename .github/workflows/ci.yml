@@ -90,11 +90,11 @@ jobs:
         include:
           - target_repository: paritytech/polkadot
             # Pin a well-known nightly version to avoid upstream breakage
-            rustc: nightly-2021-10-04
+            rustc: nightly-2021-11-01
             target: wasm32-unknown-unknown
             allow_failure: true
           - target_repository: paritytech/substrate
-            rustc: nightly-2021-10-04
+            rustc: nightly-2021-11-01
             target: wasm32-unknown-unknown
             allow_failure: true
           - target_repository: serde-rs/serde

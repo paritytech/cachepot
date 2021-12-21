@@ -36,7 +36,6 @@ blake3 = "1"
 byteorder = "1.0"
 bytes = "1"
 chrono = { version = "0.4", optional = true }
-clap = "2.23.0"
 counted-array = "0.1"
 directories = "3"
 env_logger = "0.8"
@@ -45,6 +44,7 @@ flate2 = { version = "1.0", optional = true, default-features = false, features 
 futures = "0.3"
 futures-locks = "0.6"
 fs-err = "2.6"
+gzp = { version = "0.9", default-features = false, features = ["deflate_rust"]  }
 hmac = { version = "0.10", optional = true }
 http = "0.2"
 hyper = { version = "0.14", optional = true, features = ["server", "client"] }
@@ -93,6 +93,8 @@ walkdir = "2"
 which = { version = "4", default-features = false }
 zip = { version = "0.5", default-features = false }
 zstd = "0.6"
+structopt = "0.3.25"
+strum = { version = "0.23.0", features = ["derive"] }
 
 # dist-server only
 crossbeam-utils = { version = "0.8", optional = true }
@@ -114,7 +116,7 @@ cc = "1.0"
 chrono = "0.4"
 itertools = "0.10"
 predicates = "1"
-selenium-rs = "0.1"
+thirtyfour_sync = "0.27"
 serial_test = "0.5"
 
 [target.'cfg(unix)'.dependencies]
