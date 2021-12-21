@@ -90,8 +90,8 @@ pub struct Command2 {
     internal_start_server: Option<String>,
 
     /// set output format of statistics
-    #[structopt(long, required = false, default_value = "text", possible_values = StatsFormat::VARIANTS)]
-    stats_format: StatsFormat,
+    #[structopt(long, default_value = "text", possible_values = StatsFormat::VARIANTS)]
+    stats_format: Option<StatsFormat>,
 
     cmd: Vec<OsString>,
 }

@@ -52,8 +52,8 @@ struct SchedulerSubcommand {
     config: PathBuf,
 
     /// Log to the syslog with LEVEL
-    #[structopt(long, required = false, value_name = "LEVEL", possible_values = LOG_LEVELS)]
-    syslog: String,
+    #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+    syslog: Option<String>,
 }
 
 #[derive(StructOpt)]
@@ -64,8 +64,8 @@ struct ServerSubcommand {
     config: PathBuf,
 
     /// Log to the syslog with LEVEL
-    #[structopt(long, required = false, value_name = "LEVEL", possible_values = LOG_LEVELS)]
-    syslog: String,
+    #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+    syslog: Option<String>,
 }
 
 #[derive(StructOpt)]
@@ -234,7 +234,7 @@ fn run(command: Command) -> Result<i32> {
                 bail!("Could not load config!");
             };
 
-            if syslog != "" {
+            if let Some(syslog) = syslog {
                 check_init_syslog("cachepot-buildserver", &syslog)?;
             }
 
@@ -316,7 +316,9 @@ fn run(command: Command) -> Result<i32> {
                 bail!("Could not load config!");
             };
 
-            check_init_syslog("cachepot-build-server", &syslog)?;
+            if let Some(syslog) = syslog {
+                check_init_syslog("cachepot-build-server", &syslog)?;
+            }
 
             let builder: Box<dyn dist::BuilderIncoming> = match builder {
                 server_config::BuilderType::Docker => {
