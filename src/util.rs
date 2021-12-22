@@ -441,19 +441,6 @@ mod http_extension {
             )
         }
     }
-
-    #[cfg(feature = "reqwest")]
-    impl RequestExt for ::reqwest::blocking::RequestBuilder {
-        fn set_header<H>(self, header: H) -> Self
-        where
-            H: hyperx::header::Header + fmt::Display,
-        {
-            self.header(
-                H::header_name(),
-                HeaderValue::from_maybe_shared(header.to_string()).unwrap(),
-            )
-        }
-    }
 }
 
 /// Pipe `cmd`'s stdio to `/dev/null`, unless a specific env var is set.

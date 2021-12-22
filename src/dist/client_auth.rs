@@ -228,7 +228,7 @@ mod code_grant_pkce {
         Ok(response)
     }
 
-    pub fn code_to_token(
+    pub async fn code_to_token(
         token_url: &str,
         client_id: &str,
         code_verifier: &str,
@@ -242,8 +242,8 @@ mod code_grant_pkce {
             grant_type: GRANT_TYPE_PARAM_VALUE,
             redirect_uri,
         };
-        let client = reqwest::blocking::Client::new();
-        let res = client.post(token_url).json(&token_request).send()?;
+        let client = reqwest::Client::new();
+        let res = client.post(token_url).json(&token_request).send().await?;
         if !res.status().is_success() {
             bail!(
                 "Sending code to {} failed, HTTP error: {}",
@@ -254,6 +254,7 @@ mod code_grant_pkce {
 
         let (token, expires_at) = handle_token_response(
             res.json()
+                .await
                 .context("Failed to parse token response as JSON")?,
         )?;
         if expires_at - Instant::now() < MIN_TOKEN_VALIDITY {
@@ -551,8 +552,12 @@ pub fn get_token_oauth2_code_grant_pkce(
     let code = code_rx
         .try_recv()
         .expect("Hyper shutdown but code not available - internal error");
-    code_grant_pkce::code_to_token(token_url, client_id, &verifier, &code, &redirect_uri)
-        .context("Failed to convert oauth2 code into a token")
+
+    runtime.block_on(async move {
+        code_grant_pkce::code_to_token(token_url, client_id, &verifier, &code, &redirect_uri)
+            .await
+            .context("Failed to convert oauth2 code into a token")
+    })
 }
 
 // https://auth0.com/docs/api-auth/tutorials/implicit-grant

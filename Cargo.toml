@@ -67,7 +67,7 @@ percent-encoding = { version = "2", optional = true }
 rand = "0.8"
 redis = { version = "0.21", optional = true, default-features = false, features = ["aio", "tokio-comp"] }
 regex = "1"
-reqwest = { version = "0.11.7", features = ["json", "blocking"], optional = true }
+reqwest = { version = "0.11.7", features = ["json"], optional = true }
 retry = "1"
 ring = { version = "0.16", optional = true, features = ["std"] }
 rusoto_core = { version = "0.47", optional = true }

@@ -252,6 +252,7 @@ async fn run(command: Command) -> Result<i32> {
                     jwks_url,
                 } => Box::new(
                     token_check::ValidJWTCheck::new(audience, issuer, &jwks_url)
+                        .await
                         .context("Failed to create a checker for valid JWTs")?,
                 ),
                 scheduler_config::ClientAuth::Mozilla { required_groups } => {

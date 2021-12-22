@@ -38,7 +38,8 @@ mod common {
         fn bytes(self, bytes: Vec<u8>) -> Self;
         fn bearer_auth(self, token: String) -> Self;
     }
-    impl ReqwestRequestBuilderExt for reqwest::blocking::RequestBuilder {
+    /*
+    impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
             let bytes =
                 bincode::serialize(bincode).context("Failed to serialize body to bincode")?;
@@ -53,6 +54,7 @@ mod common {
             self.set_header(header::Authorization(header::Bearer { token }))
         }
     }
+    */
     impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
             let bytes =
@@ -360,8 +362,9 @@ mod server {
         }
     }
 
+    #[async_trait]
     pub trait ClientAuthCheck: Send + Sync {
-        fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg>;
+        async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg>;
     }
     pub type ServerAuthCheck = Arc<dyn Fn(&str) -> Option<ServerId> + Send + Sync>;
 
@@ -1153,6 +1156,7 @@ mod server {
 
                 check_client_auth
                     .check(&bearer_auth)
+                    .await
                     .map_err(|_| Error::BearerAuthFailed)?;
 
                 Ok(())
