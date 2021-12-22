@@ -11,6 +11,7 @@ use crate::harness::{
     write_source,
 };
 use assert_cmd::prelude::*;
+use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{
     AssignJobResult, CompileCommand, InputsReader, JobId, JobState, RunJobResult, ServerIncoming,
@@ -160,6 +161,7 @@ fn test_dist_nobuilder() {
 }
 
 struct FailingServer;
+#[async_trait]
 impl ServerIncoming for FailingServer {
     fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = false;
@@ -169,33 +171,34 @@ impl ServerIncoming for FailingServer {
             state,
         })
     }
-    fn handle_submit_toolchain(
+    async fn handle_submit_toolchain(
         &self,
         _requester: &dyn ServerOutgoing,
         _job_id: JobId,
-        _tc_rdr: ToolchainReader,
+        _tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
         panic!("should not have submitted toolchain")
     }
-    fn handle_run_job(
+    async fn handle_run_job(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
         _command: CompileCommand,
         _outputs: Vec<String>,
-        _inputs_rdr: InputsReader,
+        _inputs_rdr: InputsReader<'_>,
     ) -> Result<RunJobResult> {
         requester
             .do_update_job_state(job_id, JobState::Started)
+            .await
             .context("Updating job state failed")?;
         bail!("internal build failure")
     }
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_failingserver() {
+async fn test_dist_failingserver() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -205,7 +208,7 @@ fn test_dist_failingserver() {
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
     system.add_scheduler();
-    system.add_custom_server(FailingServer);
+    system.add_custom_server(FailingServer).await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");

@@ -372,7 +372,7 @@ impl DistSystem {
         handle
     }
 
-    pub fn add_custom_server<S: dist::ServerIncoming + 'static>(
+    pub async fn add_custom_server<S: dist::ServerIncoming + 'static>(
         &mut self,
         handler: S,
     ) -> ServerHandle {
@@ -393,7 +393,8 @@ impl DistSystem {
             ForkResult::Child => {
                 env::set_var("RUST_LOG", "cachepot=trace");
                 env_logger::try_init().unwrap();
-                void::unreachable(server.start().unwrap())
+                server.start().await.unwrap();
+                unimplemented!()
             }
         };
 

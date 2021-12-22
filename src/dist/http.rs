@@ -419,7 +419,7 @@ mod server {
         fn verify_token(&self, job_id: JobId, token: &str) -> Result<()> {
             let valid_claims = JobJwt { job_id };
             let key = jwt::DecodingKey::from_secret(&self.server_key);
-            jwt::decode(&token, &key, &JWT_VALIDATION)
+            jwt::decode(token, &key, &JWT_VALIDATION)
                 .map_err(|e| anyhow!("JWT decode failed: {}", e))
                 .and_then(|res| {
                     fn identical_t<T>(_: &T, _: &T) {}
@@ -435,6 +435,7 @@ mod server {
 
     #[test]
     fn test_job_token_verification() {
+        use crate::dist::JobAuthorizer;
         let ja = JWTJobAuthorizer::new(vec![1, 2, 2]);
 
         let job_id = JobId(55);
@@ -655,7 +656,7 @@ mod server {
                     requester.clone(),
                 ))
                 .or(run_job(
-                    request_count.clone(),
+                    request_count,
                     job_authorizer,
                     server_incoming_handler,
                     requester,
@@ -665,7 +666,7 @@ mod server {
 
             fn make_401_with_body(short_err: &str, body: Option<ClientVisibleMsg>) -> Response {
                 let body = reply::with_status(
-                    body.map(|b| b.0).unwrap_or(String::new()),
+                    body.map(|b| b.0).unwrap_or_default(),
                     StatusCode::UNAUTHORIZED,
                 );
 
@@ -1183,9 +1184,9 @@ mod server {
                         if server_id.addr().ip() != origin_ip {
                             trace!("server ip: {:?}", server_id.addr().ip());
                             trace!("request ip: {:?}", remote.unwrap().ip());
-                            return Err(warp::reject::custom(
+                            Err(warp::reject::custom(
                                 Error::InvalidBearerTokenMismatchedAddress,
-                            ));
+                            ))
                         } else {
                             Ok(server_id)
                         }

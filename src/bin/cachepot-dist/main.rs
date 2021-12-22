@@ -94,6 +94,7 @@ struct GenerateJwtHS256ServerToken {
 }
 
 #[derive(StructOpt)]
+#[allow(clippy::enum_variant_names)]
 enum AuthSubcommand {
     GenerateSharedToken(GenerateSharedToken),
     GenerateJwtHS256Key,
@@ -154,10 +155,10 @@ fn create_jwt_server_token(
     key: &[u8],
 ) -> Result<String> {
     let key = jwt::EncodingKey::from_secret(key);
-    jwt::encode(&header, &ServerJwt { server_id }, &key).map_err(Into::into)
+    jwt::encode(header, &ServerJwt { server_id }, &key).map_err(Into::into)
 }
 fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Option<ServerId> {
-    jwt::dangerous_insecure_decode::<ServerJwt>(&server_token)
+    jwt::dangerous_insecure_decode::<ServerJwt>(server_token)
         .map(|res| res.claims.server_id)
         .ok()
 }
@@ -205,9 +206,7 @@ async fn run(command: Command) -> Result<i32> {
                     bail!("Could not read config");
                 }
             } else {
-                secret_key
-                    .expect("missing secret-key in parsed subcommand")
-                    .to_owned()
+                secret_key.expect("missing secret-key in parsed subcommand")
             };
 
             let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)?;
@@ -267,7 +266,7 @@ async fn run(command: Command) -> Result<i32> {
                 scheduler_config::ServerAuth::Insecure => {
                     warn!("Scheduler starting with DANGEROUSLY_INSECURE server authentication");
                     let token = INSECURE_DIST_SERVER_TOKEN;
-                    Arc::new(move |server_token| check_server_token(server_token, &token))
+                    Arc::new(move |server_token| check_server_token(server_token, token))
                 }
                 scheduler_config::ServerAuth::Token { token } => {
                     Arc::new(move |server_token| check_server_token(server_token, &token))
@@ -340,7 +339,7 @@ async fn run(command: Command) -> Result<i32> {
             let scheduler_auth = match scheduler_auth {
                 server_config::SchedulerAuth::Insecure => {
                     warn!("Server starting with DANGEROUSLY_INSECURE scheduler authentication");
-                    create_server_token(server_id, &INSECURE_DIST_SERVER_TOKEN)
+                    create_server_token(server_id, INSECURE_DIST_SERVER_TOKEN)
                 }
                 server_config::SchedulerAuth::Token { token } => {
                     create_server_token(server_id, &token)
@@ -690,7 +689,7 @@ impl SchedulerIncoming for Scheduler {
             }
             Some(ref mut details) if details.server_nonce != server_nonce => {
                 for job_id in details.jobs_assigned.iter() {
-                    if jobs.remove(&job_id).is_none() {
+                    if jobs.remove(job_id).is_none() {
                         warn!(
                             "Unknown job found when replacing server {}: {}",
                             server_id.addr(),
