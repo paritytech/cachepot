@@ -44,7 +44,7 @@ pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     // Don't run this with run() because on Windows `wait_with_output`
     // will hang because the internal server process is not detached.
     trace!("cachepot --start-server");
-    cachepot_command()
+    let _status = cachepot_command()
         .arg("--start-server")
         .env("CACHEPOT_CONF", cfg_path)
         .env("CACHEPOT_CACHED_CONF", cached_cfg_path)
