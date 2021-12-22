@@ -466,12 +466,12 @@ mod server {
         pub enum Error {
             #[error("failed to assign job")]
             AssignJob,
-            #[error("")]
+            #[error("no Authorization header")]
             NoAuthorizationHeader,
-            #[error("")]
+            #[error("authorization header is wrong")]
             AuthorizationHeaderBroken,
-            #[error("")]
-            AuthFailed,
+            #[error("bearer_auth_failed")]
+            BearerAuthFailed,
             #[error("")]
             Bincode,
         }
@@ -529,7 +529,7 @@ mod server {
 
                 authorizer
                     .verify_token(job_id, &token)
-                    .map_err(|_| Error::AuthFailed)?;
+                    .map_err(|_| Error::BearerAuthFailed)?;
 
                 Ok(job_id)
             }
@@ -677,12 +677,30 @@ mod server {
                 .into_response()
             }
 
+            fn err_and_log<E: std::error::Error>(err: E, status: StatusCode) -> Response {
+                let mut err_msg = err.to_string();
+                let mut maybe_cause = err.source();
+                while let Some(cause) = maybe_cause {
+                    err_msg.push_str(", caused by: ");
+                    err_msg.push_str(&cause.to_string());
+                    maybe_cause = cause.source();
+                }
+
+                warn!("Res error: {}", err_msg);
+                let err: Box<dyn std::error::Error> = err.into();
+                let json = ErrJson::from_err(&*err);
+
+                reply::with_status(warp::reply::json(&json), status).into_response()
+            }
+
             async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
                 if err.is_not_found() {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
                 } else if let Some(e) = err.find::<Error>() {
                     match e {
-                        Error::NoAuthorizationHeader => {
+                        Error::AuthorizationHeaderBroken
+                        | Error::NoAuthorizationHeader
+                        | Error::BearerAuthFailed => {
                             let err: Box<dyn std::error::Error> = e.into();
                             let json = ErrJson::from_err(&*err);
                             Ok(make_401_with_body(
@@ -691,16 +709,14 @@ mod server {
                             )
                             .into_response())
                         }
-                        _ => {
-                            unimplemented!();
-                        }
+                        Error::Bincode => Ok(err_and_log(e, StatusCode::BAD_REQUEST)),
+                        Error::AssignJob => Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR)),
                     }
                 } else {
-                    Ok(warp::reply::with_status(
-                        "INTERNAL_SERVER_ERROR",
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                    Ok(
+                        warp::reply::with_status(warp::reply(), StatusCode::NOT_FOUND)
+                            .into_response(),
                     )
-                    .into_response())
                 }
             }
 
@@ -849,7 +865,7 @@ mod server {
             use std::net::SocketAddr;
             use std::sync::Arc;
             use tokio::sync::Mutex;
-            use warp::http::header::{ACCEPT, AUTHORIZATION, WWW_AUTHENTICATE};
+            use warp::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE};
             use warp::{
                 http::{
                     header::{HeaderMap, HeaderValue},
@@ -1038,13 +1054,14 @@ mod server {
             where
                 T: serde::de::DeserializeOwned + std::marker::Send,
             {
-                warp::header::exact("Content-Type", "application/octet-stream").and(
-                    warp::body::bytes().and_then(|body: bytes::Bytes| async move {
-                        let mut reader = body.reader();
-                        bincode::deserialize_from::<_, T>(&mut reader)
-                            .map_err(|_| warp::reject::custom(Error::Bincode))
-                    }),
-                )
+                warp::header::exact_ignore_case(CONTENT_TYPE.as_str(), "application/octet-stream")
+                    .and(
+                        warp::body::bytes().and_then(|body: bytes::Bytes| async move {
+                            let mut reader = body.reader();
+                            bincode::deserialize_from::<_, T>(&mut reader)
+                                .map_err(|_| warp::reject::custom(Error::Bincode))
+                        }),
+                    )
             }
 
             async fn prepare_response<T>(
@@ -1097,7 +1114,7 @@ mod server {
 
             fn with_auth(
                 auth: Arc<dyn ClientAuthCheck>,
-            ) -> impl Filter<Extract = ((), ), Error = Rejection> + Clone {
+            ) -> impl Filter<Extract = ((),), Error = Rejection> + Clone {
                 warp::header::headers_cloned()
                     .map(move |headers: HeaderMap<HeaderValue>| (auth.clone(), headers))
                     .untuple_one()
@@ -1508,7 +1525,7 @@ mod server {
 
             Ok(())
         }
-     }
+    }
 
     struct ServerRequester {
         client: reqwest::Client,
