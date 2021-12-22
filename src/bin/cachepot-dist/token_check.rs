@@ -334,7 +334,9 @@ impl ClientAuthCheck for ValidJWTCheck {
 
 impl ValidJWTCheck {
     pub async fn new(audience: String, issuer: String, jwks_url: &str) -> Result<Self> {
-        let res = reqwest::get(jwks_url).await.context("Failed to make request to JWKs url")?;
+        let res = reqwest::get(jwks_url)
+            .await
+            .context("Failed to make request to JWKs url")?;
         if !res.status().is_success() {
             bail!("Could not retrieve JWKs, HTTP error: {}", res.status())
         }
