@@ -135,7 +135,7 @@ features = [
 
 [features]
 default = ["all"]
-all = ["dist-server", "dist-client", "redis", "s3", "memcached", "gcs", "azure"]
+all = ["dist-client", "redis", "s3", "memcached", "gcs", "azure"]
 azure = ["chrono", "hyper", "hyperx", "url", "hmac", "md-5", "sha2"]
 s3 = ["chrono", "hyper", "hyper-tls", "hyperx", "reqwest", "rusoto_core", "rusoto_s3", "hmac", "sha-1"]
 gcs = ["chrono", "hyper", "hyperx", "percent-encoding", "reqwest", "ring", "untrusted", "url"]
