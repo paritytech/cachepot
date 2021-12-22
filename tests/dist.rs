@@ -56,10 +56,10 @@ pub fn dist_test_cachepot_client_cfg(
     cachepot_cfg
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_basic() {
+async fn test_dist_basic() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -68,8 +68,8 @@ fn test_dist_basic() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
-    system.add_server();
+    system.add_scheduler().await;
+    system.add_server().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -90,10 +90,10 @@ fn test_dist_basic() {
     });
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_restartedserver() {
+async fn test_dist_restartedserver() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -102,8 +102,8 @@ fn test_dist_restartedserver() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
-    let server_handle = system.add_server();
+    system.add_scheduler().await;
+    let server_handle = system.add_server().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -114,7 +114,7 @@ fn test_dist_restartedserver() {
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
     basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
 
-    system.restart_server(&server_handle);
+    system.restart_server(&server_handle).await;
     basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
 
     get_stats(|info| {
@@ -127,10 +127,10 @@ fn test_dist_restartedserver() {
     });
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_nobuilder() {
+async fn test_dist_nobuilder() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -139,7 +139,7 @@ fn test_dist_nobuilder() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
+    system.add_scheduler().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -207,7 +207,7 @@ async fn test_dist_failingserver() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
+    system.add_scheduler().await;
     system.add_custom_server(FailingServer).await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
