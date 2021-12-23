@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use assert_cmd::prelude::*;
 #[cfg(feature = "dist-server")]
@@ -290,18 +290,25 @@ impl DistSystem {
         wait_for_http(scheduler_url, Duration::from_millis(100), MAX_STARTUP_WAIT).await;
 
         let status_fut = async move {
-            let status = self.scheduler_status().await;
-            if matches!(
-                status,
-                SchedulerStatusResult {
-                    num_servers: 0,
-                    num_cpus: _,
-                    in_progress: 0
+            loop {
+                let status = self.scheduler_status();
+
+                tokio::select! {
+                    s = status => {
+                        if matches!(
+                            s,
+                            SchedulerStatusResult {
+                                num_servers: 0,
+                                num_cpus: _,
+                                in_progress: 0
+                        }
+                        ) {
+                            break Ok(());
+                        } else {
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
                 }
-            ) {
-                Ok(())
-            } else {
-                Err(format!("{:?}", status))
             }
         };
 
@@ -429,18 +436,25 @@ impl DistSystem {
         };
         wait_for_http(url, Duration::from_millis(100), MAX_STARTUP_WAIT).await;
         let status_fut = async move {
-            let status = self.scheduler_status().await;
-            if matches!(
-                status,
-                SchedulerStatusResult {
-                    num_servers: 1,
-                    num_cpus: _,
-                    in_progress: 0
+            loop {
+                let status = self.scheduler_status();
+
+                tokio::select! {
+                    s = status => {
+                        if matches!(
+                            s,
+                            SchedulerStatusResult {
+                                num_servers: 1,
+                                num_cpus: _,
+                                in_progress: 0
+                            }
+                        ) {
+                            break Ok(());
+                        } else {
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
                 }
-            ) {
-                Ok(())
-            } else {
-                Err(format!("{:?}", status))
             }
         };
 
@@ -460,7 +474,9 @@ impl DistSystem {
         .await
         .unwrap();
         assert!(res.status().is_success());
-        bincode::deserialize_from(res.bytes().await.unwrap().as_ref()).unwrap()
+        let bytes = res.bytes().await.unwrap();
+
+        bincode::deserialize_from(bytes.as_ref()).unwrap()
     }
 
     fn container_ip(&self, name: &str) -> IpAddr {
@@ -637,7 +653,6 @@ fn check_output(output: &Output) {
 
 #[cfg(feature = "dist-server")]
 async fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
-    // TODO: after upgrading to reqwest >= 0.9, use 'danger_accept_invalid_certs' and stick with that rather than tcp
     let try_connect = async move {
         let client = reqwest::ClientBuilder::new()
             .danger_accept_invalid_certs(true)
@@ -661,5 +676,5 @@ async fn wait_for<F: std::future::Future<Output = Result<(), String>>>(f: F, max
     tokio::time::timeout(max_wait, f)
         .await
         .unwrap()
-        .expect("wait timed out");
+        .expect("wait timed out")
 }

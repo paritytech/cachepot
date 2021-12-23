@@ -567,14 +567,14 @@ mod server {
                 T: serde::Serialize,
             {
                 match accept {
-                    Some(accept) if accept == "application/octet-stream" => {
-                        Ok(warp::http::Response::builder()
-                            .body(hyper::Body::from(
-                                bincode::serialize(&content).map_err(|_| Error::Bincode)?,
-                            ))
-                            .map_err(|_| Error::Bincode)?)
+                    Some(accept) if accept == "application/json" => {
+                        Ok(warp::reply::json(&content).into_response())
                     }
-                    _ => Ok(warp::reply::json(&content).into_response()),
+                    _ => Ok(warp::http::Response::builder()
+                        .body(hyper::Body::from(
+                            bincode::serialize(&content).map_err(|_| Error::Bincode)?,
+                        ))
+                        .map_err(|_| Error::Bincode)?),
                 }
             }
 
@@ -1006,7 +1006,7 @@ mod server {
                 certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-                warp::path!("api" / "v1" / "scheudler" / "heartbeat_server")
+                warp::path!("api" / "v1" / "scheduler" / "heartbeat_server")
                     .and(warp::post())
                     .and(with_server_auth(check_server_auth))
                     .and(warp::header::headers_cloned())
@@ -1076,14 +1076,15 @@ mod server {
                 T: serde::Serialize,
             {
                 match accept {
-                    Some(accept) if accept == "application/octet-stream" => {
-                        Ok(warp::http::Response::builder()
-                            .body(hyper::Body::from(
-                                bincode::serialize(&content).map_err(|_| Error::Bincode)?,
-                            ))
-                            .map_err(|_| Error::Bincode)?)
+                    Some(accept) if accept == "application/json" => {
+                        Ok(warp::reply::json(&content).into_response())
                     }
-                    _ => Ok(warp::reply::json(&content).into_response()),
+                    _ => Ok(warp::http::Response::builder()
+                        .header(CONTENT_TYPE, "application/octet-stream")
+                        .body(hyper::Body::from(
+                            bincode::serialize(&content).map_err(|_| Error::Bincode)?,
+                        ))
+                        .map_err(|_| Error::Bincode)?),
                 }
             }
 
