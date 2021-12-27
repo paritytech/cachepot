@@ -322,6 +322,7 @@ dependencies = [
  "log",
  "md-5",
  "memcached-rs",
+ "native-tls",
  "nix 0.19.1",
  "num_cpus",
  "number_prefix",

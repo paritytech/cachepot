@@ -852,6 +852,8 @@ mod server {
             Heartbeat,
             #[error("failed to update job state")]
             UpdateJobState,
+            #[error("failed to create a http client")]
+            ClientBuildFailed,
         }
 
         impl warp::reject::Reject for Error {}
@@ -933,7 +935,8 @@ mod server {
                         | Error::Heartbeat
                         | Error::UpdateJobState
                         | Error::Status
-                        | Error::NoHTTPClient => {
+                        | Error::NoHTTPClient
+                        | Error::ClientBuildFailed => {
                             Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR))
                         }
                     }
@@ -1328,7 +1331,9 @@ mod server {
                     "Adding new certificate for {} to scheduler",
                     server_id.addr()
                 );
-                let mut client_builder = reqwest::ClientBuilder::new();
+
+                let mut client_builder = crate::util::native_tls_no_sni_client_builder()
+                    .map_err(|_| Error::ClientBuildFailed)?;
                 // Add all the certificates we know about
                 client_builder = client_builder.add_root_certificate(
                     reqwest::Certificate::from_pem(&cert_pem).map_err(|_| Error::BadCertificate)?,
@@ -1575,8 +1580,9 @@ mod client {
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::Mutex;
 
     use super::common::{
         bincode_req, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
@@ -1611,7 +1617,11 @@ mod client {
         ) -> Result<Self> {
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
             let connect_timeout = Duration::new(CONNECT_TIMEOUT_SECS, 0);
-            let client_async = reqwest::ClientBuilder::new()
+
+            let builder = crate::util::native_tls_no_sni_client_builder()
+                .context("failed to create an async HTTP client")?;
+
+            let client_async = builder
                 .timeout(timeout)
                 .connect_timeout(connect_timeout)
                 .build()
@@ -1636,7 +1646,9 @@ mod client {
             cert_digest: Vec<u8>,
             cert_pem: Vec<u8>,
         ) -> Result<()> {
-            let mut client_async_builder = reqwest::ClientBuilder::new();
+            let mut client_async_builder = crate::util::native_tls_no_sni_client_builder()
+                .context("failed to create an async HTTP client")?;
+
             // Add all the certificates we know about
             client_async_builder = client_async_builder.add_root_certificate(
                 reqwest::Certificate::from_pem(&cert_pem)
@@ -1665,7 +1677,7 @@ mod client {
         async fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
             let scheduler_url = self.scheduler_url.clone();
             let url = urls::scheduler_alloc_job(&scheduler_url);
-            let mut req = self.client_async.lock().unwrap().post(url);
+            let mut req = self.client_async.lock().await.post(url);
             req = req.bearer_auth(self.auth_token.clone()).bincode(&tc)?;
 
             let client_async = self.client_async.clone();
@@ -1682,7 +1694,7 @@ mod client {
                         job_alloc,
                         need_toolchain,
                     });
-                    if server_certs.lock().unwrap().contains_key(&cert_digest) {
+                    if server_certs.lock().await.contains_key(&cert_digest) {
                         return alloc_job_res;
                     }
                     info!(
@@ -1690,14 +1702,14 @@ mod client {
                         server_id.addr()
                     );
                     let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
-                    let req = client_async.lock().unwrap().get(url);
+                    let req = client_async.lock().await.get(url);
                     let res: ServerCertificateHttpResponse = bincode_req(req)
                         .await
                         .context("GET to scheduler server_certificate failed")?;
 
                     Self::update_certs(
-                        &mut client_async.lock().unwrap(),
-                        &mut server_certs.lock().unwrap(),
+                        &mut *client_async.lock().await,
+                        &mut *server_certs.lock().await,
                         res.cert_digest,
                         res.cert_pem,
                     )
@@ -1712,7 +1724,7 @@ mod client {
         async fn do_get_status(&self) -> Result<SchedulerStatusResult> {
             let scheduler_url = self.scheduler_url.clone();
             let url = urls::scheduler_status(&scheduler_url);
-            let req = self.client_async.lock().unwrap().get(url);
+            let req = self.client_async.lock().await.get(url);
 
             bincode_req(req).await
         }
@@ -1725,7 +1737,7 @@ mod client {
             match self.tc_cache.get_toolchain(&tc) {
                 Ok(Some(toolchain_file)) => {
                     let url = urls::server_submit_toolchain(job_alloc.server_id, job_alloc.job_id);
-                    let req = self.client_async.lock().unwrap().post(url);
+                    let req = self.client_async.lock().await.post(url);
 
                     let _toolchain_file_exists = toolchain_file.metadata()?;
 
@@ -1752,7 +1764,7 @@ mod client {
             inputs_packager: Box<dyn InputsPackager>,
         ) -> Result<(RunJobResult, PathTransformer)> {
             let url = urls::server_run_job(job_alloc.server_id, job_alloc.job_id);
-            let req = self.client_async.lock().unwrap().post(url);
+            let req = self.client_async.lock().await.post(url);
 
             let (path_transformer, compressed_body) = self
                 .pool

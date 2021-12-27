@@ -531,6 +531,21 @@ pub fn daemonize() -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+pub fn native_tls_no_sni_client_builder() -> Result<reqwest::ClientBuilder> {
+    let tls = native_tls::TlsConnector::builder()
+        .danger_accept_invalid_hostnames(true)
+        .danger_accept_invalid_certs(true)
+        .use_sni(false)
+        .build()?;
+
+    let client_builder = reqwest::ClientBuilder::new()
+        .use_native_tls()
+        .use_preconfigured_tls(tls);
+
+    Ok(client_builder)
+}
+
 #[cfg(test)]
 mod tests {
     use super::OsStrExt;

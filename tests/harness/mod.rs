@@ -400,7 +400,7 @@ impl DistSystem {
                 env::set_var("RUST_LOG", "cachepot=trace");
                 env_logger::try_init().unwrap();
                 server.start().await.unwrap();
-                unimplemented!()
+                panic!("unreachable");
             }
         };
 
@@ -652,17 +652,32 @@ fn check_output(output: &Output) {
 }
 
 #[cfg(feature = "dist-server")]
+fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
+    let tls = native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .use_sni(false)
+        .build()
+        .unwrap();
+
+    reqwest::ClientBuilder::new()
+        .use_native_tls()
+        .use_preconfigured_tls(tls)
+}
+
+#[cfg(feature = "dist-server")]
 async fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
     let try_connect = async move {
-        let client = reqwest::ClientBuilder::new()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let client = native_tls_no_sni_client_builder_danger().build().unwrap();
+
         let url = url.to_url();
 
         loop {
-            if let Ok(_) = tokio::time::timeout(interval, client.get(url.clone()).send()).await {
-                break;
+            match tokio::time::timeout(interval, client.get(url.clone()).send()).await {
+                Ok(Ok(ok)) => {
+                    break;
+                }
+                b => {}
             };
         }
     };
