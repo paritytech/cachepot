@@ -29,7 +29,7 @@ const CONTAINER_NAME_PREFIX: &str = "cachepot_dist_test";
 const DIST_IMAGE: &str = "cachepot_dist_test_image";
 const DIST_DOCKERFILE: &str = include_str!("Dockerfile.cachepot-dist");
 const DIST_IMAGE_BWRAP_PATH: &str = "/bwrap";
-const MAX_STARTUP_WAIT: Duration = Duration::from_secs(5);
+const MAX_STARTUP_WAIT: Duration = Duration::from_secs(10);
 
 const DIST_SERVER_TOKEN: &str = "THIS IS THE TEST TOKEN";
 
@@ -201,6 +201,7 @@ pub struct DistSystem {
     scheduler_name: Option<String>,
     server_names: Vec<String>,
     server_pids: Vec<Pid>,
+    client: reqwest::Client,
 }
 
 #[cfg(feature = "dist-server")]
@@ -226,6 +227,8 @@ impl DistSystem {
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
 
+        let client = native_tls_no_sni_client_builder_danger().build().unwrap();
+
         Self {
             cachepot_dist: cachepot_dist.to_owned(),
             tmpdir,
@@ -233,6 +236,7 @@ impl DistSystem {
             scheduler_name: None,
             server_names: vec![],
             server_pids: vec![],
+            client,
         }
     }
 
@@ -287,7 +291,13 @@ impl DistSystem {
         check_output(&output);
 
         let scheduler_url = self.scheduler_url();
-        wait_for_http(scheduler_url, Duration::from_millis(100), MAX_STARTUP_WAIT).await;
+        wait_for_http(
+            &self.client,
+            scheduler_url,
+            Duration::from_millis(100),
+            MAX_STARTUP_WAIT,
+        )
+        .await;
 
         let status_fut = async move {
             loop {
@@ -434,7 +444,13 @@ impl DistSystem {
                 url.clone()
             }
         };
-        wait_for_http(url, Duration::from_millis(100), MAX_STARTUP_WAIT).await;
+        wait_for_http(
+            &self.client,
+            url,
+            Duration::from_millis(100),
+            MAX_STARTUP_WAIT,
+        )
+        .await;
         let status_fut = async move {
             loop {
                 let status = self.scheduler_status();
@@ -468,11 +484,8 @@ impl DistSystem {
     }
 
     async fn scheduler_status(&self) -> SchedulerStatusResult {
-        let res = reqwest::get(dist::http::urls::scheduler_status(
-            &self.scheduler_url().to_url(),
-        ))
-        .await
-        .unwrap();
+        let url = dist::http::urls::scheduler_status(&self.scheduler_url().to_url());
+        let res = self.client.get(url).send().await.unwrap();
         assert!(res.status().is_success());
         let bytes = res.bytes().await.unwrap();
 
@@ -666,18 +679,21 @@ fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
 }
 
 #[cfg(feature = "dist-server")]
-async fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
+async fn wait_for_http(
+    client: &reqwest::Client,
+    url: HTTPUrl,
+    interval: Duration,
+    max_wait: Duration,
+) {
     let try_connect = async move {
-        let client = native_tls_no_sni_client_builder_danger().build().unwrap();
-
         let url = url.to_url();
 
         loop {
             match tokio::time::timeout(interval, client.get(url.clone()).send()).await {
-                Ok(Ok(ok)) => {
+                Ok(Ok(_)) => {
                     break;
                 }
-                b => {}
+                _ => {}
             };
         }
     };
