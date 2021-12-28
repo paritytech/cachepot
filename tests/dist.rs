@@ -227,4 +227,5 @@ async fn test_dist_failingserver() {
         assert_eq!(0, info.stats.cache_hits.all());
         assert_eq!(1, info.stats.cache_misses.all());
     });
+    stop_local_daemon();
 }
