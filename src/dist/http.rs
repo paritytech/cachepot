@@ -38,23 +38,7 @@ mod common {
         fn bytes(self, bytes: Vec<u8>) -> Self;
         fn bearer_auth(self, token: String) -> Self;
     }
-    /*
-    impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
-        fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
-            let bytes =
-                bincode::serialize(bincode).context("Failed to serialize body to bincode")?;
-            Ok(self.bytes(bytes))
-        }
-        fn bytes(self, bytes: Vec<u8>) -> Self {
-            self.set_header(header::ContentType::octet_stream())
-                .set_header(header::ContentLength(bytes.len() as u64))
-                .body(bytes)
-        }
-        fn bearer_auth(self, token: String) -> Self {
-            self.set_header(header::Authorization(header::Bearer { token }))
-        }
-    }
-    */
+
     impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
             let bytes =
