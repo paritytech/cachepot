@@ -388,7 +388,9 @@ impl DistSystem {
     ) -> ServerHandle {
         let server_addr = {
             let ip = self.host_interface_ip();
-            let listener = tokio::net::TcpListener::bind(SocketAddr::from((ip, 0))).await.unwrap();
+            let listener = tokio::net::TcpListener::bind(SocketAddr::from((ip, 0)))
+                .await
+                .unwrap();
             listener.local_addr().unwrap()
         };
         let token = create_server_token(ServerId::new(server_addr), DIST_SERVER_TOKEN);
