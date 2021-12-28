@@ -409,8 +409,7 @@ impl DistSystem {
             ForkResult::Child => {
                 env::set_var("RUST_LOG", "cachepot=trace");
                 env_logger::try_init().unwrap();
-                server.start().await.unwrap();
-                panic!("unreachable");
+                void::unreachable(server.start().await.unwrap())
             }
         };
 

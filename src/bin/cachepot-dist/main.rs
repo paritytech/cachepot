@@ -369,8 +369,7 @@ async fn run(command: Command) -> Result<i32> {
                 server,
             )
             .context("Failed to create cachepot HTTP server instance")?;
-            http_server.start().await?;
-            Ok(0)
+            void::unreachable(http_server.start().await?)
         }
     }
 }

@@ -235,6 +235,7 @@ mod server {
     use std::result::Result as StdResult;
     use std::sync::Arc;
     use std::time::Duration;
+    use void::Void;
 
     use super::common::{
         bincode_req, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
@@ -1361,7 +1362,7 @@ mod server {
             }
         }
 
-        pub async fn start(self) -> Result<()> {
+        pub async fn start(self) -> Result<Void> {
             let Self {
                 public_addr,
                 handler,
@@ -1385,7 +1386,8 @@ mod server {
             );
             info!("Scheduler listening for clients on {}", public_addr);
             warp::serve(api).run(public_addr).await;
-            Ok(())
+
+            panic!("Warp server terminated")
         }
     }
     pub struct SchedulerRequester {
@@ -1451,7 +1453,7 @@ mod server {
             })
         }
 
-        pub async fn start(self) -> Result<()> {
+        pub async fn start(self) -> Result<Void> {
             let Self {
                 public_addr,
                 scheduler_url,
@@ -1518,7 +1520,7 @@ mod server {
                 .run(public_addr)
                 .await;
 
-            Ok(())
+            panic!("Warp server terminated")
         }
     }
 
