@@ -5,7 +5,7 @@ use cachepot::server::ServerInfo;
 use cachepot::util::fs;
 use std::env;
 use std::io::Write;
-use std::net::{self, IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str;
@@ -388,7 +388,7 @@ impl DistSystem {
     ) -> ServerHandle {
         let server_addr = {
             let ip = self.host_interface_ip();
-            let listener = net::TcpListener::bind(SocketAddr::from((ip, 0))).unwrap();
+            let listener = tokio::net::TcpListener::bind(SocketAddr::from((ip, 0))).await.unwrap();
             listener.local_addr().unwrap()
         };
         let token = create_server_token(ServerId::new(server_addr), DIST_SERVER_TOKEN);
