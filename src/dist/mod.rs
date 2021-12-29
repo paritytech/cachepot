@@ -685,7 +685,11 @@ pub trait SchedulerIncoming: Send + Sync {
 #[async_trait]
 pub trait ServerIncoming: Send + Sync {
     // From Scheduler
-    fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> ExtResult<AssignJobResult, Error>;
+    async fn handle_assign_job(
+        &self,
+        job_id: JobId,
+        tc: Toolchain,
+    ) -> ExtResult<AssignJobResult, Error>;
     // From Client
     async fn handle_submit_toolchain(
         &self,

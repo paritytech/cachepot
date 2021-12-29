@@ -746,6 +746,7 @@ mod server {
             ) -> Result<AssignJobResult, Rejection> {
                 let res = handler
                     .handle_assign_job(job_id, toolchain)
+                    .await
                     .map_err(|_| warp::reject::custom(Error::AssignJob))?;
 
                 Ok(res)

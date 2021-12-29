@@ -808,11 +808,12 @@ impl Server {
 
 #[async_trait]
 impl ServerIncoming for Server {
-    fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
+    async fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self
             .job_toolchains
-            .blocking_lock()
+            .lock()
+            .await
             .insert(job_id, tc)
             .is_none());
         let state = if need_toolchain {

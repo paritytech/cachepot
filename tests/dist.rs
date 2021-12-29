@@ -163,7 +163,7 @@ async fn test_dist_nobuilder() {
 struct FailingServer;
 #[async_trait]
 impl ServerIncoming for FailingServer {
-    fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
+    async fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = false;
         let state = JobState::Ready;
         Ok(AssignJobResult {
