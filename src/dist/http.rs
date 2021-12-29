@@ -1370,8 +1370,12 @@ mod server {
                 check_server_auth,
             } = self;
 
+            let client = crate::util::native_tls_no_sni_client_builder()
+                .unwrap()
+                .build()
+                .unwrap();
             let requester = Arc::new(SchedulerRequester {
-                client: Mutex::new(reqwest::Client::new()),
+                client: Mutex::new(client),
             });
 
             let check_client_auth = Arc::from(check_client_auth);

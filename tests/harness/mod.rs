@@ -183,8 +183,14 @@ fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
 
 #[cfg(feature = "dist-server")]
 pub enum ServerHandle {
-    Container { cid: String, url: HTTPUrl },
-    AsyncTask { url: HTTPUrl },
+    Container {
+        cid: String,
+        url: HTTPUrl,
+    },
+    AsyncTask {
+        handle: JoinHandle<()>,
+        url: HTTPUrl,
+    },
 }
 
 #[cfg(feature = "dist-server")]
@@ -285,6 +291,7 @@ impl DistSystem {
         check_output(&output);
 
         let scheduler_url = self.scheduler_url();
+
         wait_for_http(
             &self.client,
             scheduler_url,
@@ -398,11 +405,11 @@ impl DistSystem {
             dist::http::Server::new(server_addr, self.scheduler_url().to_url(), token, handler)
                 .unwrap();
         let handle = tokio::spawn(async move { void::unreachable(server.start().await.unwrap()) });
-        self.server_handles.push(handle);
+        //self.server_handles.push(handle);
 
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
-        let handle = ServerHandle::AsyncTask { url };
+        let handle = ServerHandle::AsyncTask { handle, url };
         self.wait_server_ready(&handle).await;
         handle
     }
@@ -416,7 +423,7 @@ impl DistSystem {
                     .unwrap();
                 check_output(&output);
             }
-            ServerHandle::AsyncTask { url: _ } => {
+            ServerHandle::AsyncTask { handle: _, url: _ } => {
                 // TODO: pretty easy, just no need yet
                 panic!("restart not yet implemented for pids")
             }
@@ -426,9 +433,8 @@ impl DistSystem {
 
     pub async fn wait_server_ready(&mut self, handle: &ServerHandle) {
         let url = match handle {
-            ServerHandle::Container { cid: _, url } | ServerHandle::AsyncTask { url } => {
-                url.clone()
-            }
+            ServerHandle::Container { cid: _, url }
+            | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
         };
         wait_for_http(
             &self.client,

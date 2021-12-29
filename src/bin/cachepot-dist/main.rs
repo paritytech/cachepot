@@ -787,7 +787,7 @@ impl SchedulerIncoming for Scheduler {
 pub struct Server {
     builder: Box<dyn BuilderIncoming>,
     cache: Mutex<TcCache>,
-    job_toolchains: Mutex<HashMap<JobId, Toolchain>>,
+    job_toolchains: tokio::sync::Mutex<HashMap<JobId, Toolchain>>,
 }
 
 impl Server {
@@ -801,7 +801,7 @@ impl Server {
         Ok(Server {
             builder,
             cache: Mutex::new(cache),
-            job_toolchains: Mutex::new(HashMap::new()),
+            job_toolchains: tokio::sync::Mutex::new(HashMap::new()),
         })
     }
 }
@@ -812,8 +812,7 @@ impl ServerIncoming for Server {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self
             .job_toolchains
-            .lock()
-            .unwrap()
+            .blocking_lock()
             .insert(job_id, tc)
             .is_none());
         let state = if need_toolchain {
@@ -839,7 +838,7 @@ impl ServerIncoming for Server {
             .context("Updating job state failed")?;
         // TODO: need to lock the toolchain until the container has started
         // TODO: can start prepping container
-        let tc = match self.job_toolchains.lock().unwrap().get(&job_id).cloned() {
+        let tc = match self.job_toolchains.lock().await.get(&job_id).cloned() {
             Some(tc) => tc,
             None => return Ok(SubmitToolchainResult::JobNotFound),
         };
@@ -867,7 +866,7 @@ impl ServerIncoming for Server {
             .do_update_job_state(job_id, JobState::Started)
             .await
             .context("Updating job state failed")?;
-        let tc = self.job_toolchains.lock().unwrap().remove(&job_id);
+        let tc = self.job_toolchains.lock().await.remove(&job_id);
         let res = match tc {
             None => Ok(RunJobResult::JobNotFound),
             Some(tc) => {

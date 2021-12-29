@@ -195,7 +195,7 @@ impl ServerIncoming for FailingServer {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_failingserver() {
@@ -208,7 +208,7 @@ async fn test_dist_failingserver() {
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
     system.add_scheduler().await;
-    system.add_custom_server(FailingServer).await;
+    let handle = system.add_custom_server(FailingServer).await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -228,4 +228,8 @@ async fn test_dist_failingserver() {
         assert_eq!(1, info.stats.cache_misses.all());
     });
     stop_local_daemon();
+    if let harness::ServerHandle::AsyncTask { handle, url: _ } = handle {
+        handle.abort();
+        let _ = handle.await;
+    }
 }
