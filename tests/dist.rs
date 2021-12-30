@@ -25,7 +25,7 @@ use cachepot::errors::*;
 
 mod harness;
 
-fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_path: &Path) {
+async fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_path: &Path) {
     let envs: Vec<(_, &OsStr)> = vec![
         ("RUST_BACKTRACE", "1".as_ref()),
         ("RUST_LOG", "cachepot=trace".as_ref()),
@@ -35,15 +35,19 @@ fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_pa
     let source_file = "x.c";
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(CACHEPOT_TEST_DEFINE)\n#error CACHEPOT_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
-    cachepot_command()
+    let mut command: tokio::process::Command = cachepot_command().into();
+
+    assert!(command
         .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
         .args(&["-c", "-DCACHEPOT_TEST_DEFINE"])
         .arg(tmpdir.join(source_file))
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
-        .assert()
-        .success();
+        .status()
+        .await
+        .unwrap()
+        .success())
 }
 
 pub fn dist_test_cachepot_client_cfg(
@@ -78,7 +82,7 @@ async fn test_dist_basic() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
@@ -112,10 +116,10 @@ async fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     system.restart_server(&server_handle).await;
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
@@ -148,7 +152,7 @@ async fn test_dist_nobuilder() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
@@ -195,7 +199,7 @@ impl ServerIncoming for FailingServer {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_failingserver() {
@@ -217,7 +221,7 @@ async fn test_dist_failingserver() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
