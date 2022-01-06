@@ -540,8 +540,7 @@ where
     let mut tls_builder = native_tls::TlsConnector::builder();
 
     for root_cert in root_certs {
-        tls_builder
-            .add_root_certificate(native_tls::Certificate::from_pem(root_cert.as_ref())?);
+        tls_builder.add_root_certificate(native_tls::Certificate::from_pem(root_cert.as_ref())?);
     }
 
     tls_builder.use_sni(false);

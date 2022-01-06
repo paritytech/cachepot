@@ -1339,7 +1339,8 @@ mod server {
                     server_id.addr()
                 );
 
-                let _ = native_tls::Certificate::from_pem(&cert_pem).map_err(|_| Error::BadCertificate)?;
+                let _ = native_tls::Certificate::from_pem(&cert_pem)
+                    .map_err(|_| Error::BadCertificate)?;
                 // Add all the certificates we know about
                 let root_certs =
                     std::iter::once(&cert_pem).chain(certs.values().map(|(_, cert_pem)| cert_pem));
@@ -1658,9 +1659,8 @@ mod client {
         ) -> Result<()> {
             // Add all the certificates we know about
             let root_certs = std::iter::once(&cert_pem).chain(certs.values());
-            let client_async_builder =
-                crate::util::native_tls_no_sni_client_builder(root_certs)
-                    .context("failed to create an async HTTP client")?;
+            let client_async_builder = crate::util::native_tls_no_sni_client_builder(root_certs)
+                .context("failed to create an async HTTP client")?;
 
             // Finish the clients
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
