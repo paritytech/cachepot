@@ -532,12 +532,21 @@ pub fn daemonize() -> Result<()> {
 }
 
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
-pub fn native_tls_no_sni_client_builder() -> Result<reqwest::ClientBuilder> {
-    let tls = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_hostnames(true)
-        .danger_accept_invalid_certs(true)
-        .use_sni(false)
-        .build()?;
+pub fn native_tls_no_sni_client_builder<'a, I, T>(root_certs: I) -> Result<reqwest::ClientBuilder>
+where
+    I: Iterator<Item = T>,
+    T: AsRef<[u8]>,
+{
+    let mut tls_builder = native_tls::TlsConnector::builder();
+
+    for root_cert in root_certs {
+        tls_builder
+            .add_root_certificate(native_tls::Certificate::from_pem(root_cert.as_ref())?);
+    }
+
+    tls_builder.use_sni(false);
+
+    let tls = tls_builder.build()?;
 
     let client_builder = reqwest::ClientBuilder::new()
         .use_native_tls()

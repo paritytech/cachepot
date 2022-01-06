@@ -301,8 +301,7 @@ async fn run(command: Command) -> Result<i32> {
                 check_client_auth,
                 check_server_auth,
             );
-            http_scheduler.start().await?;
-            Ok(0)
+            void::unreachable(http_scheduler.start().await?);
         }
 
         Command::Server(ServerSubcommand { config, syslog }) => {

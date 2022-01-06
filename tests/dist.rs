@@ -10,7 +10,6 @@ use crate::harness::{
     cachepot_command, get_stats, start_local_daemon, stop_local_daemon, write_json_cfg,
     write_source,
 };
-use assert_cmd::prelude::*;
 use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{

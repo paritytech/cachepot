@@ -38,7 +38,6 @@ mod common {
         fn bytes(self, bytes: Vec<u8>) -> Self;
         fn bearer_auth(self, token: String) -> Self;
     }
-
     impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
             let bytes =
@@ -55,12 +54,11 @@ mod common {
         }
     }
 
+    #[cfg(any(feature = "dist-client", feature = "dist-server"))]
     pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::RequestBuilder,
     ) -> Result<T> {
-        // Work around tiny_http issue #151 by disabling HTTP pipeline with
-        // `Connection: close`.
-        let res = req.set_header(header::Connection::close()).send().await?;
+        let res = req.send().await?;
 
         let status = res.status();
         let bytes = res.bytes().await?;
@@ -455,13 +453,11 @@ mod server {
         pub enum Error {
             #[error("failed to assign job")]
             AssignJob,
-            #[error("no Authorization header")]
-            NoAuthorizationHeader,
             #[error("authorization header is wrong")]
             AuthorizationHeaderBroken,
             #[error("bearer_auth_failed")]
             BearerAuthFailed,
-            #[error("")]
+            #[error("a bincode error has occured")]
             Bincode,
         }
 
@@ -473,7 +469,7 @@ mod server {
             use warp::{
                 http::{
                     header::{ACCEPT, AUTHORIZATION, WWW_AUTHENTICATE},
-                    HeaderMap, HeaderValue, StatusCode,
+                    HeaderValue, StatusCode,
                 },
                 reply::{self, Response},
                 Filter, Rejection, Reply,
@@ -486,12 +482,8 @@ mod server {
                 JobAuthorizer, JobId, ServerIncoming,
             };
 
-            fn bearer_http_auth(headers: &HeaderMap<HeaderValue>) -> Result<String, Error> {
-                let header = headers
-                    .get(AUTHORIZATION)
-                    .ok_or(Error::NoAuthorizationHeader)?;
-
-                let header = header
+            fn bearer_http_auth(auth_header: &HeaderValue) -> Result<String, Error> {
+                let header = auth_header
                     .to_str()
                     .map_err(|_| Error::AuthorizationHeaderBroken)?;
 
@@ -512,9 +504,9 @@ mod server {
             async fn authorize(
                 job_id: JobId,
                 authorizer: Arc<dyn JobAuthorizer>,
-                headers: HeaderMap<HeaderValue>, // TODO: Only need an Authorization header
+                auth_header: HeaderValue,
             ) -> Result<JobId, Rejection> {
-                let token = bearer_http_auth(&headers)?;
+                let token = bearer_http_auth(&auth_header)?;
 
                 authorizer
                     .verify_token(job_id, &token)
@@ -575,7 +567,7 @@ mod server {
                 warp::path!("api" / "v1" / "distserver" / "assign_job" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
-                    .and(warp::header::headers_cloned())
+                    .and(warp::header::value(AUTHORIZATION.as_str()))
                     .and_then(authorize)
                     .and(toolchain())
                     .and(with_server_incoming_handler(handler))
@@ -595,7 +587,7 @@ mod server {
                 warp::path!("api" / "v1" / "distserver" / "submit_toolchain" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
-                    .and(warp::header::headers_cloned())
+                    .and(warp::header::value(AUTHORIZATION.as_str()))
                     .and_then(authorize)
                     .and(with_server_incoming_handler(handler))
                     .and(with_requester(requester))
@@ -615,7 +607,7 @@ mod server {
                 warp::path!("api" / "v1" / "distserver" / "run_job" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
-                    .and(warp::header::headers_cloned())
+                    .and(warp::header::value(AUTHORIZATION.as_str()))
                     .and_then(authorize)
                     .and(with_server_incoming_handler(handler))
                     .and(with_requester(requester))
@@ -685,11 +677,25 @@ mod server {
             async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
                 if err.is_not_found() {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
+                } else if let Some(e) = err.find::<warp::reject::MissingHeader>() {
+                    if e.name() == AUTHORIZATION.as_str() {
+                        let err: Box<dyn std::error::Error> = e.into();
+                        let json = ErrJson::from_err(&*err);
+
+                        Ok(make_401_with_body(
+                            "invalid_jwt",
+                            Some(ClientVisibleMsg(json.into_data())),
+                        )
+                        .into_response())
+                    } else {
+                        Ok(
+                            warp::reply::with_status(warp::reply(), StatusCode::NOT_FOUND)
+                                .into_response(),
+                        )
+                    }
                 } else if let Some(e) = err.find::<Error>() {
                     match e {
-                        Error::AuthorizationHeaderBroken
-                        | Error::NoAuthorizationHeader
-                        | Error::BearerAuthFailed => {
+                        Error::AuthorizationHeaderBroken | Error::BearerAuthFailed => {
                             let err: Box<dyn std::error::Error> = e.into();
                             let json = ErrJson::from_err(&*err);
                             Ok(make_401_with_body(
@@ -898,6 +904,21 @@ mod server {
             ) -> Result<impl Reply, std::convert::Infallible> {
                 if err.is_not_found() {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
+                } else if let Some(e) = err.find::<warp::reject::MissingHeader>() {
+                    if e.name() == AUTHORIZATION.as_str() {
+                        let err: Box<dyn std::error::Error> = e.into();
+                        let json = ErrJson::from_err(&*err);
+
+                        Ok(
+                            make_401_with_body("invalid_jwt", ClientVisibleMsg(json.into_data()))
+                                .into_response(),
+                        )
+                    } else {
+                        Ok(
+                            warp::reply::with_status(warp::reply(), StatusCode::NOT_FOUND)
+                                .into_response(),
+                        )
+                    }
                 } else if let Some(e) = err.find::<Error>() {
                     match e {
                         Error::NoAuthorizationHeader
@@ -965,7 +986,9 @@ mod server {
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "alloc_job")
                     .and(warp::post())
-                    .and(with_auth(auth))
+                    .and(with_client_authorizer(auth))
+                    .and(warp::header::value(AUTHORIZATION.as_str()))
+                    .and_then(authorize)
                     .untuple_one()
                     .and(with_handler(s))
                     .and(toolchain())
@@ -1106,21 +1129,15 @@ mod server {
                 warp::any().map(move || check_server_auth.clone())
             }
 
-            fn with_auth(
-                auth: Arc<dyn ClientAuthCheck>,
-            ) -> impl Filter<Extract = ((),), Error = Rejection> + Clone {
-                warp::header::headers_cloned()
-                    .map(move |headers: HeaderMap<HeaderValue>| (auth.clone(), headers))
-                    .untuple_one()
-                    .and_then(authorize)
+            fn with_client_authorizer(
+                client_authorizer: Arc<dyn ClientAuthCheck>,
+            ) -> impl Filter<Extract = (Arc<dyn ClientAuthCheck>,), Error = Infallible> + Clone
+            {
+                warp::any().map(move || client_authorizer.clone())
             }
 
-            fn bearer_http_auth(headers: &HeaderMap<HeaderValue>) -> Result<String, Error> {
-                let header = headers
-                    .get(AUTHORIZATION)
-                    .ok_or(Error::NoAuthorizationHeader)?;
-
-                let header = header
+            fn bearer_http_auth(auth_header: &HeaderValue) -> Result<String, Error> {
+                let header = auth_header
                     .to_str()
                     .map_err(|_| Error::AuthorizationHeaderBroken)?;
 
@@ -1140,9 +1157,9 @@ mod server {
 
             async fn authorize(
                 check_client_auth: Arc<dyn ClientAuthCheck>,
-                headers: HeaderMap<HeaderValue>,
+                auth_header: HeaderValue,
             ) -> Result<(), Rejection> {
-                let bearer_auth = bearer_http_auth(&headers)?;
+                let bearer_auth = bearer_http_auth(&auth_header)?;
 
                 check_client_auth
                     .check(&bearer_auth)
@@ -1157,7 +1174,11 @@ mod server {
                 headers: HeaderMap<HeaderValue>,
                 remote: Option<SocketAddr>,
             ) -> Result<ServerId, Rejection> {
-                match check_server_auth(&bearer_http_auth(&headers)?) {
+                let auth_header = headers
+                    .get(AUTHORIZATION.as_str())
+                    .ok_or(Error::NoAuthorizationHeader)?;
+
+                match check_server_auth(&bearer_http_auth(auth_header)?) {
                     Some(server_id) => {
                         let origin_ip = if let Some(header_val) = headers.get("X-Real-IP") {
                             trace!("X-Real-IP: {:?}", header_val);
@@ -1318,17 +1339,13 @@ mod server {
                     server_id.addr()
                 );
 
-                let mut client_builder = crate::util::native_tls_no_sni_client_builder()
-                    .map_err(|_| Error::ClientBuildFailed)?;
+                let _ = native_tls::Certificate::from_pem(&cert_pem).map_err(|_| Error::BadCertificate)?;
                 // Add all the certificates we know about
-                client_builder = client_builder.add_root_certificate(
-                    reqwest::Certificate::from_pem(&cert_pem).map_err(|_| Error::BadCertificate)?,
-                );
-                for (_, cert_pem) in certs.values() {
-                    client_builder = client_builder.add_root_certificate(
-                        reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
-                    );
-                }
+                let root_certs =
+                    std::iter::once(&cert_pem).chain(certs.values().map(|(_, cert_pem)| cert_pem));
+                let client_builder = crate::util::native_tls_no_sni_client_builder(root_certs)
+                    .map_err(|_| Error::ClientBuildFailed)?;
+
                 // Finish the clients
                 let new_client = client_builder.build().map_err(|_| Error::NoHTTPClient)?;
                 // Use the updated certificates
@@ -1371,10 +1388,11 @@ mod server {
                 check_server_auth,
             } = self;
 
-            let client = crate::util::native_tls_no_sni_client_builder()
-                .unwrap()
-                .build()
-                .unwrap();
+            let client =
+                crate::util::native_tls_no_sni_client_builder(std::iter::empty::<Vec<u8>>())
+                    .unwrap()
+                    .build()
+                    .unwrap();
             let requester = Arc::new(SchedulerRequester {
                 client: Mutex::new(client),
             });
@@ -1609,8 +1627,9 @@ mod client {
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
             let connect_timeout = Duration::new(CONNECT_TIMEOUT_SECS, 0);
 
-            let builder = crate::util::native_tls_no_sni_client_builder()
-                .context("failed to create an async HTTP client")?;
+            let builder =
+                crate::util::native_tls_no_sni_client_builder(std::iter::empty::<Vec<u8>>())
+                    .context("failed to create an async HTTP client")?;
 
             let client_async = builder
                 .timeout(timeout)
@@ -1637,19 +1656,12 @@ mod client {
             cert_digest: Vec<u8>,
             cert_pem: Vec<u8>,
         ) -> Result<()> {
-            let mut client_async_builder = crate::util::native_tls_no_sni_client_builder()
-                .context("failed to create an async HTTP client")?;
-
             // Add all the certificates we know about
-            client_async_builder = client_async_builder.add_root_certificate(
-                reqwest::Certificate::from_pem(&cert_pem)
-                    .context("failed to interpret pem as certificate")?,
-            );
-            for cert_pem in certs.values() {
-                client_async_builder = client_async_builder.add_root_certificate(
-                    reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
-                );
-            }
+            let root_certs = std::iter::once(&cert_pem).chain(certs.values());
+            let client_async_builder =
+                crate::util::native_tls_no_sni_client_builder(root_certs)
+                    .context("failed to create an async HTTP client")?;
+
             // Finish the clients
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
             let new_client_async = client_async_builder
