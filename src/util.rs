@@ -531,6 +531,19 @@ pub fn daemonize() -> Result<()> {
     Ok(())
 }
 
+// This function builds a custom `native-tls`-based `reqwest` client.
+//
+// It main goal is to dodge the currently existing issue that `request`
+// is not able to connect to tls hosts by their IP addrs since it tries
+// to put these addrs into the SNI extentions. As of this day falling back
+// to a `native-tls` backend seems to be the only way to disable the `SNI` feature
+// in `request`. Also all the intended root certificates have to be passed
+// to the `native-tls` builder; using the higher-level `request` bulider API will
+// not work.
+//
+// More context:
+// https://github.com/seanmonstar/reqwest/issues/1328
+// https://github.com/briansmith/webpki/issues/54
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
 pub fn native_tls_no_sni_client_builder<'a, I, T>(root_certs: I) -> Result<reqwest::ClientBuilder>
 where
