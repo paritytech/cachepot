@@ -67,7 +67,7 @@ percent-encoding = { version = "2", optional = true }
 rand = "0.8"
 redis = { version = "0.21", optional = true, default-features = false, features = ["aio", "tokio-comp"] }
 regex = "1"
-reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+reqwest = { version = "0.11.7", features = ["json", "native-tls"], optional = true }
 retry = "1"
 ring = { version = "0.16", optional = true, features = ["std"] }
 rusoto_core = { version = "0.47", optional = true }
@@ -95,15 +95,17 @@ zip = { version = "0.5", default-features = false }
 zstd = "0.6"
 structopt = "0.3.25"
 strum = { version = "0.23.0", features = ["derive"] }
+native-tls = "0.2.8"
 
 # dist-server only
 crossbeam-utils = { version = "0.8", optional = true }
 libmount = { version = "0.1.10", optional = true }
 nix = { version = "0.19", optional = true }
-rouille = { version = "3", optional = true, default-features = false, features = ["ssl"] }
 syslog = { version = "5", optional = true }
 void = { version = "1", optional = true }
 version-compare = { version = "0.0.11", optional = true }
+warp = { version = "0.3.2", optional = true, features = ["tls"] }
+thiserror = { version = "1.0.30", optional = true }
 
 # test only
 openssl = { version = "0.10", optional = true }
@@ -145,7 +147,7 @@ unstable = []
 # Enables distributed support in the cachepot client
 dist-client = ["ar", "flate2", "hyper", "hyperx", "reqwest/stream", "url", "sha2", "tokio/fs"]
 # Enables the cachepot-dist binary
-dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest", "rouille", "sha2", "syslog", "void", "version-compare"]
+dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest",  "sha2", "syslog", "void", "version-compare", "warp", "thiserror"]
 # Enables dist tests with external requirements
 dist-tests = ["dist-client", "dist-server"]
 # Run JWK token crypto against openssl ref impl

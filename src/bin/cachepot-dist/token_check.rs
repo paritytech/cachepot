@@ -1,5 +1,6 @@
 use crate::jwt;
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use cachepot::dist::http::{ClientAuthCheck, ClientVisibleMsg};
 use cachepot::util::RequestExt;
 use std::collections::HashMap;
@@ -51,8 +52,9 @@ pub struct EqCheck {
     s: String,
 }
 
+#[async_trait]
 impl ClientAuthCheck for EqCheck {
-    fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
         if self.s == token {
             Ok(())
         } else {
@@ -76,14 +78,15 @@ const MOZ_USERINFO_ENDPOINT: &str = "https://auth.mozilla.auth0.com/userinfo";
 
 // Mozilla-specific check by forwarding the token onto the auth0 userinfo endpoint
 pub struct MozillaCheck {
-    auth_cache: Mutex<HashMap<String, Instant>>, // token, token_expiry
-    client: reqwest::blocking::Client,
+    auth_cache: tokio::sync::Mutex<HashMap<String, Instant>>, // token, token_expiry
+    client: reqwest::Client,
     required_groups: Vec<String>,
 }
 
+#[async_trait]
 impl ClientAuthCheck for MozillaCheck {
-    fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
-        self.check_mozilla(token).map_err(|e| {
+    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+        self.check_mozilla(token).await.map_err(|e| {
             warn!("Mozilla token validation failed: {}", e);
             ClientVisibleMsg::from_nonsensitive(
                 "Failed to validate Mozilla OAuth token, run cachepot --dist-auth".to_owned(),
@@ -95,13 +98,13 @@ impl ClientAuthCheck for MozillaCheck {
 impl MozillaCheck {
     pub fn new(required_groups: Vec<String>) -> Self {
         Self {
-            auth_cache: Mutex::new(HashMap::new()),
-            client: reqwest::blocking::Client::new(),
+            auth_cache: tokio::sync::Mutex::new(HashMap::new()),
+            client: reqwest::Client::new(),
             required_groups,
         }
     }
 
-    fn check_mozilla(&self, token: &str) -> Result<()> {
+    async fn check_mozilla(&self, token: &str) -> Result<()> {
         // azp == client_id
         // {
         //   "iss": "https://auth.mozilla.auth0.com/",
@@ -129,7 +132,7 @@ impl MozillaCheck {
             bail!("JWT expired")
         }
         // If the token is cached and not expired, return it
-        let mut auth_cache = self.auth_cache.lock().unwrap();
+        let mut auth_cache = self.auth_cache.lock().await;
         if let Some(cached_at) = auth_cache.get(token) {
             if cached_at.elapsed() < MOZ_SESSION_TIMEOUT {
                 return Ok(());
@@ -150,10 +153,12 @@ impl MozillaCheck {
             .get(url.clone())
             .set_header(header)
             .send()
+            .await
             .context("Failed to make request to mozilla userinfo")?;
         let status = res.status();
         let res_text = res
             .text()
+            .await
             .context("Failed to interpret response from mozilla userinfo as string")?;
         if !status.is_success() {
             bail!("JWT forwarded to {} returned {}: {}", url, status, res_text)
@@ -237,14 +242,15 @@ fn test_auth_verify_check_mozilla_profile() {
 // Don't check a token is valid (it may not even be a JWT) just forward it to
 // an API and check for success
 pub struct ProxyTokenCheck {
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
     maybe_auth_cache: Option<Mutex<(HashMap<String, Instant>, Duration)>>,
     url: String,
 }
 
+#[async_trait]
 impl ClientAuthCheck for ProxyTokenCheck {
-    fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
-        match self.check_token_with_forwarding(token) {
+    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+        match self.check_token_with_forwarding(token).await {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("Proxying token validation failed: {}", e);
@@ -261,13 +267,13 @@ impl ProxyTokenCheck {
         let maybe_auth_cache: Option<Mutex<(HashMap<String, Instant>, Duration)>> =
             cache_secs.map(|secs| Mutex::new((HashMap::new(), Duration::from_secs(secs))));
         Self {
-            client: reqwest::blocking::Client::new(),
+            client: reqwest::Client::new(),
             maybe_auth_cache,
             url,
         }
     }
 
-    fn check_token_with_forwarding(&self, token: &str) -> Result<()> {
+    async fn check_token_with_forwarding(&self, token: &str) -> Result<()> {
         trace!("Validating token by forwarding to {}", self.url);
         // If the token is cached and not cache has not expired, return it
         if let Some(ref auth_cache) = self.maybe_auth_cache {
@@ -289,6 +295,7 @@ impl ProxyTokenCheck {
             .get(&self.url)
             .set_header(header)
             .send()
+            .await
             .context("Failed to make request to proxying url")?;
         if !res.status().is_success() {
             bail!("Token forwarded to {} returned {}", self.url, res.status());
@@ -310,8 +317,9 @@ pub struct ValidJWTCheck {
     kid_to_pkcs1: HashMap<String, Vec<u8>>,
 }
 
+#[async_trait]
 impl ClientAuthCheck for ValidJWTCheck {
-    fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
         match self.check_jwt_validity(token) {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -325,12 +333,14 @@ impl ClientAuthCheck for ValidJWTCheck {
 }
 
 impl ValidJWTCheck {
-    pub fn new(audience: String, issuer: String, jwks_url: &str) -> Result<Self> {
-        let res = reqwest::blocking::get(jwks_url).context("Failed to make request to JWKs url")?;
+    pub async fn new(audience: String, issuer: String, jwks_url: &str) -> Result<Self> {
+        let res = reqwest::get(jwks_url)
+            .await
+            .context("Failed to make request to JWKs url")?;
         if !res.status().is_success() {
             bail!("Could not retrieve JWKs, HTTP error: {}", res.status())
         }
-        let jwks: Jwks = res.json().context("Failed to parse JWKs json")?;
+        let jwks: Jwks = res.json().await.context("Failed to parse JWKs json")?;
         let kid_to_pkcs1 = jwks
             .keys
             .into_iter()

@@ -441,19 +441,6 @@ mod http_extension {
             )
         }
     }
-
-    #[cfg(feature = "reqwest")]
-    impl RequestExt for ::reqwest::blocking::RequestBuilder {
-        fn set_header<H>(self, header: H) -> Self
-        where
-            H: hyperx::header::Header + fmt::Display,
-        {
-            self.header(
-                H::header_name(),
-                HeaderValue::from_maybe_shared(header.to_string()).unwrap(),
-            )
-        }
-    }
 }
 
 /// Pipe `cmd`'s stdio to `/dev/null`, unless a specific env var is set.
@@ -542,6 +529,42 @@ pub fn daemonize() -> Result<()> {
 #[cfg(windows)]
 pub fn daemonize() -> Result<()> {
     Ok(())
+}
+
+// This function builds a custom `native-tls`-based `reqwest` client.
+//
+// It main goal is to dodge the currently existing issue that `request`
+// is not able to connect to tls hosts by their IP addrs since it tries
+// to put these addrs into the SNI extentions. As of this day falling back
+// to a `native-tls` backend seems to be the only way to disable the `SNI` feature
+// in `request`. Also all the intended root certificates have to be passed
+// to the `native-tls` builder; using the higher-level `request` bulider API will
+// not work.
+//
+// More context:
+// https://github.com/seanmonstar/reqwest/issues/1328
+// https://github.com/briansmith/webpki/issues/54
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+pub fn native_tls_no_sni_client_builder<'a, I, T>(root_certs: I) -> Result<reqwest::ClientBuilder>
+where
+    I: Iterator<Item = T>,
+    T: AsRef<[u8]>,
+{
+    let mut tls_builder = native_tls::TlsConnector::builder();
+
+    for root_cert in root_certs {
+        tls_builder.add_root_certificate(native_tls::Certificate::from_pem(root_cert.as_ref())?);
+    }
+
+    tls_builder.use_sni(false);
+
+    let tls = tls_builder.build()?;
+
+    let client_builder = reqwest::ClientBuilder::new()
+        .use_native_tls()
+        .use_preconfigured_tls(tls);
+
+    Ok(client_builder)
 }
 
 #[cfg(test)]

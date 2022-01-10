@@ -10,7 +10,7 @@ use crate::harness::{
     cachepot_command, get_stats, start_local_daemon, stop_local_daemon, write_json_cfg,
     write_source,
 };
-use assert_cmd::prelude::*;
+use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{
     AssignJobResult, CompileCommand, InputsReader, JobId, JobState, RunJobResult, ServerIncoming,
@@ -24,7 +24,7 @@ use cachepot::errors::*;
 
 mod harness;
 
-fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_path: &Path) {
+async fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_path: &Path) {
     let envs: Vec<(_, &OsStr)> = vec![
         ("RUST_BACKTRACE", "1".as_ref()),
         ("RUST_LOG", "cachepot=trace".as_ref()),
@@ -34,15 +34,19 @@ fn basic_compile(tmpdir: &Path, cachepot_cfg_path: &Path, cachepot_cached_cfg_pa
     let source_file = "x.c";
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(CACHEPOT_TEST_DEFINE)\n#error CACHEPOT_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
-    cachepot_command()
+    let mut command: tokio::process::Command = cachepot_command().into();
+
+    assert!(command
         .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
         .args(&["-c", "-DCACHEPOT_TEST_DEFINE"])
         .arg(tmpdir.join(source_file))
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
-        .assert()
-        .success();
+        .status()
+        .await
+        .unwrap()
+        .success())
 }
 
 pub fn dist_test_cachepot_client_cfg(
@@ -55,10 +59,10 @@ pub fn dist_test_cachepot_client_cfg(
     cachepot_cfg
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_basic() {
+async fn test_dist_basic() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -67,8 +71,8 @@ fn test_dist_basic() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
-    system.add_server();
+    system.add_scheduler().await;
+    system.add_server().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -77,7 +81,7 @@ fn test_dist_basic() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
@@ -89,10 +93,10 @@ fn test_dist_basic() {
     });
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_restartedserver() {
+async fn test_dist_restartedserver() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -101,8 +105,8 @@ fn test_dist_restartedserver() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
-    let server_handle = system.add_server();
+    system.add_scheduler().await;
+    let server_handle = system.add_server().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -111,10 +115,10 @@ fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
-    system.restart_server(&server_handle);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    system.restart_server(&server_handle).await;
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
@@ -126,10 +130,10 @@ fn test_dist_restartedserver() {
     });
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_nobuilder() {
+async fn test_dist_nobuilder() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -138,7 +142,7 @@ fn test_dist_nobuilder() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
+    system.add_scheduler().await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -147,7 +151,7 @@ fn test_dist_nobuilder() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
@@ -160,8 +164,9 @@ fn test_dist_nobuilder() {
 }
 
 struct FailingServer;
+#[async_trait]
 impl ServerIncoming for FailingServer {
-    fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
+    async fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = false;
         let state = JobState::Ready;
         Ok(AssignJobResult {
@@ -169,33 +174,34 @@ impl ServerIncoming for FailingServer {
             state,
         })
     }
-    fn handle_submit_toolchain(
+    async fn handle_submit_toolchain(
         &self,
         _requester: &dyn ServerOutgoing,
         _job_id: JobId,
-        _tc_rdr: ToolchainReader,
+        _tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
         panic!("should not have submitted toolchain")
     }
-    fn handle_run_job(
+    async fn handle_run_job(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
         _command: CompileCommand,
         _outputs: Vec<String>,
-        _inputs_rdr: InputsReader,
+        _inputs_rdr: InputsReader<'_>,
     ) -> Result<RunJobResult> {
         requester
             .do_update_job_state(job_id, JobState::Started)
+            .await
             .context("Updating job state failed")?;
         bail!("internal build failure")
     }
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
-fn test_dist_failingserver() {
+async fn test_dist_failingserver() {
     let tmpdir = tempfile::Builder::new()
         .prefix("cachepot_dist_test")
         .tempdir()
@@ -204,8 +210,8 @@ fn test_dist_failingserver() {
     let cachepot_dist = harness::cachepot_dist_path();
 
     let mut system = harness::DistSystem::new(&cachepot_dist, tmpdir);
-    system.add_scheduler();
-    system.add_custom_server(FailingServer);
+    system.add_scheduler().await;
+    let handle = system.add_custom_server(FailingServer).await;
 
     let cachepot_cfg = dist_test_cachepot_client_cfg(tmpdir, system.scheduler_url());
     let cachepot_cfg_path = tmpdir.join("cachepot-cfg.json");
@@ -214,7 +220,7 @@ fn test_dist_failingserver() {
 
     stop_local_daemon();
     start_local_daemon(&cachepot_cfg_path, &cachepot_cached_cfg_path);
-    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path);
+    basic_compile(tmpdir, &cachepot_cfg_path, &cachepot_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
@@ -224,4 +230,9 @@ fn test_dist_failingserver() {
         assert_eq!(0, info.stats.cache_hits.all());
         assert_eq!(1, info.stats.cache_misses.all());
     });
+    stop_local_daemon();
+    if let harness::ServerHandle::AsyncTask { handle, url: _ } = handle {
+        handle.abort();
+        let _ = handle.await;
+    }
 }

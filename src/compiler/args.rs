@@ -300,6 +300,7 @@ macro_rules! ArgData {
     // PartialEq necessary for tests
     { pub $( $tok:tt )+ } => {
         #[derive(Clone, Debug, PartialEq)]
+        #[allow(clippy::enum_variant_names)]
         pub enum ArgData {
             $($tok)+
         }
@@ -307,6 +308,7 @@ macro_rules! ArgData {
     };
     { $( $tok:tt )+ } => {
         #[derive(Clone, Debug, PartialEq)]
+        #[allow(clippy::enum_variant_names)]
         enum ArgData {
             $($tok)+
         }

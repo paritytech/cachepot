@@ -32,9 +32,6 @@ use jsonwebtoken as jwt;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[cfg(feature = "rouille")]
-#[macro_use(router)]
-extern crate rouille;
 #[macro_use]
 extern crate serde_derive;
 
