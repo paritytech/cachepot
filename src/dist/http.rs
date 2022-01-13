@@ -27,6 +27,8 @@ mod common {
     use std::collections::HashMap;
     use std::fmt;
 
+    #[cfg(feature = "dist-server")]
+    use crate::config;
     use crate::dist;
 
     use crate::errors::*;
@@ -100,7 +102,7 @@ mod common {
         #[cfg(feature = "dist-server")]
         pub fn from_alloc_job_result(
             res: dist::AllocJobResult,
-            certs: &HashMap<dist::ServerId, (Vec<u8>, Vec<u8>)>,
+            certs: &HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>,
         ) -> Self {
             match res {
                 dist::AllocJobResult::Success {
@@ -115,10 +117,7 @@ mod common {
                         }
                     } else {
                         AllocJobHttpResponse::Fail {
-                            msg: format!(
-                                "missing certificates for server {}",
-                                job_alloc.server_id.addr()
-                            ),
+                            msg: format!("missing certificates for server {}", job_alloc.server_id),
                         }
                     }
                 }
@@ -165,7 +164,8 @@ mod common {
 }
 
 pub mod urls {
-    use crate::dist::{JobId, ServerId};
+    use crate::config::ServerUrl;
+    use crate::dist::JobId;
 
     pub fn scheduler_alloc_job(scheduler_url: &reqwest::Url) -> reqwest::Url {
         scheduler_url
@@ -174,12 +174,12 @@ pub mod urls {
     }
     pub fn scheduler_server_certificate(
         scheduler_url: &reqwest::Url,
-        server_id: ServerId,
+        server_id: ServerUrl,
     ) -> reqwest::Url {
         scheduler_url
             .join(&format!(
                 "/api/v1/scheduler/server_certificate/{}",
-                server_id.addr()
+                server_id
             ))
             .expect("failed to create server certificate url")
     }
@@ -199,35 +199,30 @@ pub mod urls {
             .expect("failed to create alloc job url")
     }
 
-    pub fn server_assign_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
+    pub fn server_assign_job(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/assign_job/{}",
-            server_id.addr(),
-            job_id
+            server_id, job_id
         );
+        warn!("URL {}", url);
         reqwest::Url::parse(&url).expect("failed to create assign job url")
     }
-    pub fn server_submit_toolchain(server_id: ServerId, job_id: JobId) -> reqwest::Url {
+    pub fn server_submit_toolchain(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/submit_toolchain/{}",
-            server_id.addr(),
-            job_id
+            server_id, job_id
         );
         reqwest::Url::parse(&url).expect("failed to create submit toolchain url")
     }
-    pub fn server_run_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
-        let url = format!(
-            "https://{}/api/v1/distserver/run_job/{}",
-            server_id.addr(),
-            job_id
-        );
+    pub fn server_run_job(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
+        let url = format!("https://{}/api/v1/distserver/run_job/{}", server_id, job_id);
         reqwest::Url::parse(&url).expect("failed to create run job url")
     }
 }
 
 #[cfg(feature = "dist-server")]
 mod server {
-    use crate::jwt;
+    use crate::{config, jwt};
     use rand::{rngs::OsRng, RngCore};
     use std::collections::HashMap;
     use std::result::Result as StdResult;
@@ -241,8 +236,8 @@ mod server {
     };
     use super::urls;
     use crate::dist::{
-        self, AssignJobResult, HeartbeatServerResult, JobId, JobState, ServerId, ServerNonce,
-        Toolchain, UpdateJobStateResult,
+        self, AssignJobResult, HeartbeatServerResult, JobId, JobState, ServerNonce, Toolchain,
+        UpdateJobStateResult,
     };
     use crate::errors::*;
 
@@ -260,11 +255,10 @@ mod server {
 
     use picky::{hash::HashAlgorithm, signature::SignatureAlgorithm};
     use sha2::Digest;
-    use std::net::{IpAddr, SocketAddr};
     use tokio::sync::Mutex;
 
     pub(crate) fn create_https_cert_and_privkey(
-        addr: SocketAddr,
+        url: &reqwest::Url,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         let mut rng = OsRng;
         let bits = 2048;
@@ -300,15 +294,25 @@ mod server {
 
         let extended_key_usage = ExtendedKeyUsage::new(vec![picky::oids::kp_server_auth()]);
 
-        let name = addr.to_string();
+        let name = url.host().unwrap(); // TODO return error
+        let name_str = url.host_str().unwrap();
 
-        let issuer_name = DirectoryName::new_common_name(name.clone());
-        let subject_name = DirectoryName::new_common_name(name);
-        let octets = match addr.ip() {
-            IpAddr::V4(inner) => inner.octets().to_vec(),
-            IpAddr::V6(inner) => inner.octets().to_vec(),
+        let issuer_name = DirectoryName::new_common_name(name_str.clone());
+        let subject_name = DirectoryName::new_common_name(name_str);
+
+        let subject_alt_name = match name {
+            url::Host::Domain(name) => {
+                GeneralNames::new(picky::x509::name::GeneralName::new_dns_name(name)?)
+            }
+            url::Host::Ipv4(addr) => {
+                let octets = addr.octets().to_vec();
+                GeneralNames::new(picky::x509::name::GeneralName::IpAddress(octets))
+            }
+            url::Host::Ipv6(addr) => {
+                let octets = addr.octets().to_vec();
+                GeneralNames::new(picky::x509::name::GeneralName::IpAddress(octets))
+            }
         };
-        let subject_alt_name = GeneralNames::new(picky::x509::name::GeneralName::IpAddress(octets));
 
         let cert = CertificateBuilder::new()
             .ca(false)
@@ -349,7 +353,7 @@ mod server {
     pub trait ClientAuthCheck: Send + Sync {
         async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg>;
     }
-    pub type ServerAuthCheck = Arc<dyn Fn(&str) -> Option<ServerId> + Send + Sync>;
+    pub type ServerAuthCheck = Arc<dyn Fn(&str) -> Option<config::ServerUrl> + Send + Sync>;
 
     const JWT_KEY_LENGTH: usize = 256 / 8;
     lazy_static! {
@@ -855,8 +859,9 @@ mod server {
                 ClientAuthCheck, ClientVisibleMsg, ErrJson, SchedulerRequester, ServerAuthCheck,
             };
             use super::{handlers, Error};
+            use crate::config;
             use crate::dist;
-            use crate::dist::{JobId, ServerId};
+            use crate::dist::JobId;
             use bytes::Buf;
             use std::collections::HashMap;
             use std::convert::Infallible;
@@ -956,7 +961,7 @@ mod server {
                 requester: Arc<SchedulerRequester>,
                 auth: Arc<dyn ClientAuthCheck>,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
                 check_server_auth: ServerAuthCheck,
             ) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
                 alloc_job(
@@ -982,7 +987,7 @@ mod server {
                 requester: Arc<SchedulerRequester>,
                 auth: Arc<dyn ClientAuthCheck>,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "alloc_job")
                     .and(warp::post())
@@ -1001,9 +1006,10 @@ mod server {
 
             // GET /api/v1/scheduler/server_certificate/{server_id: ServerId})
             fn server_certificate(
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-                warp::path!("api" / "v1" / "scheduler" / "server_certificate" / ServerId)
+                use config::ServerUrl;
+                warp::path!("api" / "v1" / "scheduler" / "server_certificate" / ServerUrl)
                     .and(warp::get())
                     .and(with_certificates(certificates))
                     .and_then(handlers::server_certificate)
@@ -1015,7 +1021,7 @@ mod server {
             fn heartbeat_server(
                 check_server_auth: ServerAuthCheck,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "heartbeat_server")
@@ -1115,9 +1121,9 @@ mod server {
             }
 
             fn with_certificates(
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<
-                Extract = (Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,),
+                Extract = (Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,),
                 Error = Infallible,
             > + Clone {
                 warp::any().map(move || certificates.clone())
@@ -1173,7 +1179,7 @@ mod server {
                 check_server_auth: ServerAuthCheck,
                 headers: HeaderMap<HeaderValue>,
                 remote: Option<SocketAddr>,
-            ) -> Result<ServerId, Rejection> {
+            ) -> Result<config::ServerUrl, Rejection> {
                 let auth_header = headers
                     .get(AUTHORIZATION.as_str())
                     .ok_or(Error::NoAuthorizationHeader)?;
@@ -1196,8 +1202,11 @@ mod server {
                             remote.unwrap().ip()
                         };
 
-                        if server_id.addr().ip() != origin_ip {
-                            trace!("server ip: {:?}", server_id.addr().ip());
+                        let url = server_id.0.to_url();
+
+                        let addrs = url.socket_addrs(|| None).unwrap_or_default();
+                        if addrs.iter().find(|addr| addr.ip() == origin_ip).is_none() {
+                            trace!("server addrs: {:?}", addrs);
                             trace!("request ip: {:?}", remote.unwrap().ip());
                             Err(warp::reject::custom(
                                 Error::InvalidBearerTokenMismatchedAddress,
@@ -1231,7 +1240,8 @@ mod server {
             use super::super::{HeartbeatServerHttpRequest, ServerCertificateHttpResponse};
             use super::super::{JWTJobAuthorizer, JobId, SchedulerRequester};
             use super::Error;
-            use crate::dist::{self, ServerId};
+            use crate::config;
+            use crate::dist::{self};
             use crate::dist::{
                 HeartbeatServerResult, JobState, SchedulerStatusResult, UpdateJobStateResult,
             };
@@ -1244,12 +1254,15 @@ mod server {
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 toolchain: dist::Toolchain,
                 requester: Arc<SchedulerRequester>,
-                certs: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                certs: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> Result<AllocJobHttpResponse, Rejection> {
                 let alloc_job_res = handler
                     .handle_alloc_job(requester.as_ref(), toolchain)
                     .await
-                    .map_err(|_| reject::custom(Error::AllocJob))?;
+                    .map_err(|e| {
+                        error!("{}", e);
+                        reject::custom(Error::AllocJob)
+                    })?;
 
                 let certs = certs.lock().await;
                 let res = AllocJobHttpResponse::from_alloc_job_result(alloc_job_res, &certs);
@@ -1258,8 +1271,8 @@ mod server {
             }
 
             pub async fn server_certificate(
-                server_id: ServerId,
-                certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                server_id: config::ServerUrl,
+                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> Result<ServerCertificateHttpResponse, Rejection> {
                 let certs = certificates.lock().await;
 
@@ -1273,10 +1286,10 @@ mod server {
             }
 
             pub async fn heartbeat_server(
-                server_id: ServerId,
+                server_id: config::ServerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 heartbeat_server: HeartbeatServerHttpRequest,
-                server_certificates: Arc<Mutex<HashMap<ServerId, (Vec<u8>, Vec<u8>)>>>,
+                server_certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
             ) -> Result<HeartbeatServerResult, Rejection> {
                 let HeartbeatServerHttpRequest {
@@ -1289,13 +1302,24 @@ mod server {
 
                 let mut client = requester.client.lock().await;
                 let mut certs = server_certificates.lock().await;
-                maybe_update_certs(&mut *client, &mut certs, server_id, cert_digest, cert_pem)
-                    .await
-                    .map_err(|_| Error::UpdateCerts)?;
+                maybe_update_certs(
+                    &mut *client,
+                    &mut certs,
+                    server_id.clone(),
+                    cert_digest,
+                    cert_pem,
+                )
+                .await
+                .map_err(|_| Error::UpdateCerts)?;
 
                 let job_authorizer = Box::new(JWTJobAuthorizer::new(jwt_key));
                 let res: HeartbeatServerResult = handler
-                    .handle_heartbeat_server(server_id, server_nonce, num_cpus, job_authorizer)
+                    .handle_heartbeat_server(
+                        server_id.clone(),
+                        server_nonce,
+                        num_cpus,
+                        job_authorizer,
+                    )
                     .map_err(|_| Error::Heartbeat)?;
 
                 Ok(res)
@@ -1303,7 +1327,7 @@ mod server {
 
             pub async fn job_state(
                 job_id: JobId,
-                server_id: ServerId,
+                server_id: config::ServerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 job_state: JobState,
             ) -> Result<UpdateJobStateResult, Rejection> {
@@ -1324,8 +1348,8 @@ mod server {
 
             async fn maybe_update_certs(
                 client: &mut reqwest::Client,
-                certs: &mut HashMap<ServerId, (Vec<u8>, Vec<u8>)>,
-                server_id: ServerId,
+                certs: &mut HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>,
+                server_id: config::ServerUrl,
                 cert_digest: Vec<u8>,
                 cert_pem: Vec<u8>,
             ) -> Result<(), Error> {
@@ -1334,10 +1358,7 @@ mod server {
                         return Ok(());
                     }
                 }
-                info!(
-                    "Adding new certificate for {} to scheduler",
-                    server_id.addr()
-                );
+                info!("Adding new certificate for {} to scheduler", server_id);
 
                 let _ = native_tls::Certificate::from_pem(&cert_pem)
                     .map_err(|_| Error::BadCertificate)?;
@@ -1358,7 +1379,7 @@ mod server {
     }
 
     pub struct Scheduler<S> {
-        public_addr: SocketAddr,
+        public_addr: reqwest::Url,
         handler: S,
         // Is this client permitted to use the scheduler?
         check_client_auth: Box<dyn ClientAuthCheck>,
@@ -1368,7 +1389,7 @@ mod server {
 
     impl<S: dist::SchedulerIncoming + 'static> Scheduler<S> {
         pub fn new(
-            public_addr: SocketAddr,
+            public_addr: reqwest::Url,
             handler: S,
             check_client_auth: Box<dyn ClientAuthCheck>,
             check_server_auth: ServerAuthCheck,
@@ -1409,7 +1430,12 @@ mod server {
                 check_server_auth,
             );
             info!("Scheduler listening for clients on {}", public_addr);
-            warp::serve(api).run(public_addr).await;
+
+            futures::future::join_all(public_addr.socket_addrs(|| None)?.iter().map(|addr| {
+                let api = api.clone();
+                warp::serve(api).run(*addr)
+            }))
+            .await;
 
             panic!("Warp server terminated")
         }
@@ -1422,7 +1448,7 @@ mod server {
     impl dist::SchedulerOutgoing for SchedulerRequester {
         async fn do_assign_job(
             &self,
-            server_id: ServerId,
+            server_id: config::ServerUrl,
             job_id: JobId,
             tc: Toolchain,
             auth: String,
@@ -1436,7 +1462,7 @@ mod server {
     }
 
     pub struct Server<S> {
-        public_addr: SocketAddr,
+        public_addr: reqwest::Url,
         scheduler_url: reqwest::Url,
         scheduler_auth: String,
         // HTTPS pieces all the builders will use for connection encryption
@@ -1452,14 +1478,13 @@ mod server {
 
     impl<S: dist::ServerIncoming + 'static> Server<S> {
         pub fn new(
-            public_addr: SocketAddr,
+            public_addr: reqwest::Url,
             scheduler_url: reqwest::Url,
             scheduler_auth: String,
             handler: S,
         ) -> Result<Self> {
-            let (cert_digest, cert_pem, privkey_pem) =
-                create_https_cert_and_privkey(public_addr)
-                    .context("failed to create HTTPS certificate for server")?;
+            let (cert_digest, cert_pem, privkey_pem) = create_https_cert_and_privkey(&public_addr)
+                .context("failed to create HTTPS certificate for server")?;
             let mut jwt_key = vec![0; JWT_KEY_LENGTH];
             OsRng.fill_bytes(&mut jwt_key);
             let server_nonce = ServerNonce::new();
@@ -1537,12 +1562,15 @@ mod server {
                 }
             });
 
-            warp::serve(api)
-                .tls()
-                .cert(cert_pem)
-                .key(privkey_pem)
-                .run(public_addr)
-                .await;
+            futures::future::join_all(public_addr.socket_addrs(|| None)?.iter().map(|addr| {
+                let api = api.clone();
+                warp::serve(api)
+                    .tls()
+                    .cert(cert_pem.clone())
+                    .key(privkey_pem.clone())
+                    .run(*addr)
+            }))
+            .await;
 
             panic!("Warp server terminated")
         }
@@ -1692,7 +1720,7 @@ mod client {
                     need_toolchain,
                     cert_digest,
                 } => {
-                    let server_id = job_alloc.server_id;
+                    let server_id = job_alloc.server_id.clone();
                     let alloc_job_res = Ok(AllocJobResult::Success {
                         job_alloc,
                         need_toolchain,
@@ -1700,10 +1728,7 @@ mod client {
                     if server_certs.lock().await.contains_key(&cert_digest) {
                         return alloc_job_res;
                     }
-                    info!(
-                        "Need to request new certificate for server {}",
-                        server_id.addr()
-                    );
+                    info!("Need to request new certificate for server {}", server_id);
                     let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
                     let req = client_async.lock().await.get(url);
                     let res: ServerCertificateHttpResponse = bincode_req(req)

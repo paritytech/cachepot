@@ -1,6 +1,6 @@
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
-use cachepot::config::HTTPUrl;
-use cachepot::dist::{self, SchedulerStatusResult, ServerId};
+use cachepot::config::{HTTPUrl, ServerUrl};
+use cachepot::dist::{self, SchedulerStatusResult};
 use cachepot::server::ServerInfo;
 use cachepot::util::fs;
 use std::env;
@@ -9,6 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str;
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
@@ -143,7 +144,7 @@ pub fn cachepot_client_cfg(tmpdir: &Path) -> cachepot::config::FileConfig {
 #[cfg(feature = "dist-server")]
 fn cachepot_scheduler_cfg() -> cachepot::config::scheduler::Config {
     cachepot::config::scheduler::Config {
-        public_addr: SocketAddr::from(([0, 0, 0, 0], SCHEDULER_PORT)),
+        public_addr: HTTPUrl::from_str(&format!("http://0.0.0.0:{}", SCHEDULER_PORT)).unwrap(),
         client_auth: cachepot::config::scheduler::ClientAuth::Insecure,
         server_auth: cachepot::config::scheduler::ServerAuth::Token {
             token: DIST_SERVER_TOKEN.to_owned(),
@@ -165,7 +166,7 @@ fn cachepot_server_cfg(
             bwrap_path: DIST_IMAGE_BWRAP_PATH.into(),
         },
         cache_dir: Path::new(CONFIGS_CONTAINER_PATH).join(relpath),
-        public_addr: SocketAddr::new(server_ip, SERVER_PORT),
+        public_addr: ServerUrl::from_str(&format!("{}:{}", server_ip, SERVER_PORT)).unwrap(),
         scheduler_url,
         scheduler_auth: cachepot::config::server::SchedulerAuth::Token {
             token: DIST_SERVER_TOKEN.to_owned(),
@@ -177,8 +178,8 @@ fn cachepot_server_cfg(
 // TODO: this is copied from the cachepot-dist binary - it's not clear where would be a better place to put the
 // code so that it can be included here
 #[cfg(feature = "dist-server")]
-fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
-    format!("{} {}", server_id.addr(), auth_token)
+fn create_server_token(server_id: ServerUrl, auth_token: &str) -> String {
+    format!("{} {}", server_id, auth_token)
 }
 
 #[cfg(feature = "dist-server")]
@@ -398,12 +399,16 @@ impl DistSystem {
             let listener = tokio::net::TcpListener::bind(SocketAddr::from((ip, 0)))
                 .await
                 .unwrap();
-            listener.local_addr().unwrap()
+            ServerUrl::from_str(&format!("{}", listener.local_addr().unwrap())).unwrap()
         };
-        let token = create_server_token(ServerId::new(server_addr), DIST_SERVER_TOKEN);
-        let server =
-            dist::http::Server::new(server_addr, self.scheduler_url().to_url(), token, handler)
-                .unwrap();
+        let token = create_server_token(server_addr.clone(), DIST_SERVER_TOKEN);
+        let server = dist::http::Server::new(
+            server_addr.0.to_url().clone(),
+            self.scheduler_url().to_url().clone(),
+            token,
+            handler,
+        )
+        .unwrap();
         let handle = tokio::spawn(async move { void::unreachable(server.start().await.unwrap()) });
         //self.server_handles.push(handle);
 

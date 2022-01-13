@@ -352,7 +352,7 @@ impl DistClientContainer {
 
                 let dist_client = dist::http::Client::new(
                     &config.pool,
-                    url,
+                    url.clone(),
                     &config.cache_dir.join("client"),
                     config.toolchain_cache_size,
                     &config.toolchains,
@@ -1149,9 +1149,8 @@ where
                             match dist_type {
                                 DistType::NoDist => {}
                                 DistType::Ok(id) => {
-                                    let server = id.addr().to_string();
                                     let server_count =
-                                        stats.dist_compiles.entry(server).or_insert(0);
+                                        stats.dist_compiles.entry(id.to_string()).or_insert(0);
                                     *server_count += 1;
                                 }
                                 DistType::Error => stats.dist_errors += 1,

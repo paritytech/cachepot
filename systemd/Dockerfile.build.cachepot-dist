@@ -8,7 +8,7 @@ RUN cd /bubblewrap-0.3.1 && \
     ./configure --disable-man && \
     make
 
-FROM rust:1.52-buster as cachepot-build
+FROM rust:1.57-buster as cachepot-build
 RUN git clone https://github.com/paritytech/cachepot.git --depth=1 && \
     cd cachepot && \
     cargo build --bin cachepot-dist --release --features="dist-server"

@@ -8,13 +8,13 @@ extern crate serde_derive;
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 use cachepot::config::{
-    scheduler as scheduler_config, server as server_config, INSECURE_DIST_CLIENT_TOKEN,
+    scheduler as scheduler_config, server as server_config, ServerUrl, INSECURE_DIST_CLIENT_TOKEN,
 };
 use cachepot::dist::{
     self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, HeartbeatServerResult,
     InputsReader, JobAlloc, JobAuthorizer, JobComplete, JobId, JobState, RunJobResult,
-    SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult, ServerId, ServerIncoming,
-    ServerNonce, ServerOutgoing, SubmitToolchainResult, TcCache, Toolchain, ToolchainReader,
+    SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult, ServerIncoming, ServerNonce,
+    ServerOutgoing, SubmitToolchainResult, TcCache, Toolchain, ToolchainReader,
     UpdateJobStateResult,
 };
 use cachepot::util::daemonize;
@@ -23,7 +23,6 @@ use rand::{rngs::OsRng, RngCore};
 use std::collections::{btree_map, BTreeMap, HashMap, HashSet};
 use std::env;
 use std::io;
-use std::net::SocketAddr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -90,7 +89,7 @@ struct GenerateJwtHS256ServerToken {
 
     /// Generate a key for the specified server
     #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
-    server: SocketAddr,
+    server: ServerUrl,
 }
 
 #[derive(StructOpt)]
@@ -131,15 +130,15 @@ fn check_init_syslog(name: &str, level: &str) -> Result<()> {
     Ok(())
 }
 
-fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
-    format!("{} {}", server_id.addr(), auth_token)
+fn create_server_token(server_id: ServerUrl, auth_token: &str) -> String {
+    format!("{} {}", server_id.to_string(), auth_token)
 }
 
-fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerId> {
+fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerUrl> {
     let mut split = server_token.splitn(2, |c| c == ' ');
-    let server_addr = split.next().and_then(|addr| addr.parse().ok())?;
+    let server_addr = split.next()?;
     match split.next() {
-        Some(t) if t == auth_token => Some(ServerId::new(server_addr)),
+        Some(t) if t == auth_token => Some(ServerUrl::from_str(server_addr).ok()?),
         Some(_) | None => None,
     }
 }
@@ -147,17 +146,17 @@ fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerId> 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ServerJwt {
-    server_id: ServerId,
+    server_id: ServerUrl,
 }
 fn create_jwt_server_token(
-    server_id: ServerId,
+    server_id: ServerUrl,
     header: &jwt::Header,
     key: &[u8],
 ) -> Result<String> {
     let key = jwt::EncodingKey::from_secret(key);
     jwt::encode(header, &ServerJwt { server_id }, &key).map_err(Into::into)
 }
-fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Option<ServerId> {
+fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Option<ServerUrl> {
     jwt::dangerous_insecure_decode::<ServerJwt>(server_token)
         .map(|res| res.claims.server_id)
         .ok()
@@ -166,7 +165,7 @@ fn check_jwt_server_token(
     server_token: &str,
     key: &[u8],
     validation: &jwt::Validation,
-) -> Option<ServerId> {
+) -> Option<ServerUrl> {
     let key = jwt::DecodingKey::from_secret(key);
     jwt::decode::<ServerJwt>(server_token, &key, validation)
         .map(|res| res.claims.server_id)
@@ -190,7 +189,6 @@ async fn run(command: Command) -> Result<i32> {
                 server,
             },
         )) => {
-            let server_id = ServerId::new(server);
             let header = jwt::Header::new(jwt::Algorithm::HS256);
 
             let secret_key = if let Some(config_path) = config {
@@ -210,7 +208,7 @@ async fn run(command: Command) -> Result<i32> {
             };
 
             let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)?;
-            let token = create_jwt_server_token(server_id, &header, &secret_key)
+            let token = create_jwt_server_token(server, &header, &secret_key)
                 .context("Failed to create server token")?;
             println!("{}", token);
             Ok(0)
@@ -296,7 +294,7 @@ async fn run(command: Command) -> Result<i32> {
             daemonize()?;
             let scheduler = Scheduler::new();
             let http_scheduler = dist::http::Scheduler::new(
-                public_addr,
+                public_addr.to_url().clone(),
                 scheduler,
                 check_client_auth,
                 check_server_auth,
@@ -335,7 +333,7 @@ async fn run(command: Command) -> Result<i32> {
                 ),
             };
 
-            let server_id = ServerId::new(public_addr);
+            let server_id = public_addr.clone();
             let scheduler_auth = match scheduler_auth {
                 server_config::SchedulerAuth::Insecure => {
                     warn!("Server starting with DANGEROUSLY_INSECURE scheduler authentication");
@@ -345,7 +343,7 @@ async fn run(command: Command) -> Result<i32> {
                     create_server_token(server_id, &token)
                 }
                 server_config::SchedulerAuth::JwtToken { token } => {
-                    let token_server_id: ServerId =
+                    let token_server_id: ServerUrl =
                         dangerous_insecure_extract_jwt_server_token(&token)
                             .context("Could not decode scheduler auth jwt")?;
                     if token_server_id != server_id {
@@ -362,8 +360,8 @@ async fn run(command: Command) -> Result<i32> {
             let server = Server::new(builder, &cache_dir, toolchain_cache_size)
                 .context("Failed to create cachepot server instance")?;
             let http_server = dist::http::Server::new(
-                public_addr,
-                scheduler_url.to_url(),
+                public_addr.0.to_url().clone(),
+                scheduler_url.to_url().clone(),
                 scheduler_auth,
                 server,
             )
@@ -387,9 +385,9 @@ const SERVER_REMEMBER_ERROR_TIMEOUT: Duration = Duration::from_secs(300);
 const UNCLAIMED_PENDING_TIMEOUT: Duration = Duration::from_secs(300);
 const UNCLAIMED_READY_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 struct JobDetail {
-    server_id: ServerId,
+    server_id: ServerUrl,
     state: JobState,
 }
 
@@ -401,7 +399,7 @@ pub struct Scheduler {
     // Currently running jobs, can never be Complete
     jobs: Mutex<BTreeMap<JobId, JobDetail>>,
 
-    servers: Mutex<HashMap<ServerId, ServerDetails>>,
+    servers: Mutex<HashMap<ServerUrl, ServerDetails>>,
 }
 
 struct ServerDetails {
@@ -427,23 +425,23 @@ impl Scheduler {
 
     fn prune_servers(
         &self,
-        servers: &mut MutexGuard<HashMap<ServerId, ServerDetails>>,
+        servers: &mut MutexGuard<HashMap<ServerUrl, ServerDetails>>,
         jobs: &mut MutexGuard<BTreeMap<JobId, JobDetail>>,
     ) {
         let now = Instant::now();
 
         let mut dead_servers = Vec::new();
 
-        for (&server_id, details) in servers.iter_mut() {
+        for (server_id, details) in servers.iter() {
             if now.duration_since(details.last_seen) > dist::http::HEARTBEAT_TIMEOUT {
-                dead_servers.push(server_id);
+                dead_servers.push(server_id.clone());
             }
         }
 
         for server_id in dead_servers {
             warn!(
                 "Server {} appears to be dead, pruning it in the scheduler",
-                server_id.addr()
+                server_id
             );
             let server_details = servers
                 .remove(&server_id)
@@ -482,7 +480,7 @@ impl SchedulerIncoming for Scheduler {
                 let mut best_err = None;
                 let mut best_load: f64 = MAX_PER_CORE_LOAD;
                 let now = Instant::now();
-                for (&server_id, details) in servers.iter_mut() {
+                for (server_id, details) in servers.iter_mut() {
                     let load = details.jobs_assigned.len() as f64 / details.num_cpus as f64;
 
                     if let Some(last_error) = details.last_error {
@@ -504,7 +502,7 @@ impl SchedulerIncoming for Scheduler {
                                             server_id,
                                             now - last_error
                                         );
-                                        best_err = Some((server_id, details));
+                                        best_err = Some((server_id.clone(), details));
                                     }
                                 }
                                 _ => {
@@ -513,12 +511,12 @@ impl SchedulerIncoming for Scheduler {
                                         server_id,
                                         now - last_error
                                     );
-                                    best_err = Some((server_id, details));
+                                    best_err = Some((server_id.clone(), details));
                                 }
                             }
                         }
                     } else if load < best_load {
-                        best = Some((server_id, details));
+                        best = Some((server_id.clone(), details));
                         trace!("Selected {:?} as the server with the best load", server_id);
                         best_load = load;
                         if load == 0f64 {
@@ -566,7 +564,7 @@ impl SchedulerIncoming for Scheduler {
             state,
             need_toolchain,
         } = requester
-            .do_assign_job(server_id, job_id, tc, auth.clone())
+            .do_assign_job(server_id.clone(), job_id, tc, auth.clone())
             .await
             .with_context(|| {
                 // LOCKS
@@ -592,13 +590,19 @@ impl SchedulerIncoming for Scheduler {
                 job_id, state
             );
             assert!(jobs
-                .insert(job_id, JobDetail { server_id, state })
+                .insert(
+                    job_id,
+                    JobDetail {
+                        server_id: server_id.clone(),
+                        state
+                    }
+                )
                 .is_none());
         }
         let job_alloc = JobAlloc {
             auth,
             job_id,
-            server_id,
+            server_id: server_id.clone(),
         };
         Ok(AllocJobResult::Success {
             job_alloc,
@@ -608,7 +612,7 @@ impl SchedulerIncoming for Scheduler {
 
     fn handle_heartbeat_server(
         &self,
-        server_id: ServerId,
+        server_id: ServerUrl,
         server_nonce: ServerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
@@ -663,23 +667,14 @@ impl SchedulerIncoming for Scheduler {
                         if !details.jobs_assigned.remove(&job_id) {
                             warn!(
                                 "Stale job for server {} not assigned: {}",
-                                server_id.addr(),
-                                job_id
+                                server_id, job_id
                             );
                         }
                         if details.jobs_unclaimed.remove(&job_id).is_none() {
-                            warn!(
-                                "Unknown stale job for server {}: {}",
-                                server_id.addr(),
-                                job_id
-                            );
+                            warn!("Unknown stale job for server {}: {}", server_id, job_id);
                         }
                         if jobs.remove(&job_id).is_none() {
-                            warn!(
-                                "Unknown stale job for server {}: {}",
-                                server_id.addr(),
-                                job_id
-                            );
+                            warn!("Unknown stale job for server {}: {}", server_id, job_id);
                         }
                     }
                 }
@@ -691,8 +686,7 @@ impl SchedulerIncoming for Scheduler {
                     if jobs.remove(job_id).is_none() {
                         warn!(
                             "Unknown job found when replacing server {}: {}",
-                            server_id.addr(),
-                            job_id
+                            server_id, job_id
                         );
                     }
                 }
@@ -718,7 +712,7 @@ impl SchedulerIncoming for Scheduler {
     fn handle_update_job_state(
         &self,
         job_id: JobId,
-        server_id: ServerId,
+        server_id: ServerUrl,
         job_state: JobState,
     ) -> Result<UpdateJobStateResult> {
         // LOCKS
