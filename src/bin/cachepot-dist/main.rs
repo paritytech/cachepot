@@ -89,7 +89,7 @@ struct GenerateJwtHS256ServerToken {
 
     /// Generate a key for the specified server
     #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
-    server: String,
+    server: ServerUrl,
 }
 
 #[derive(StructOpt)]
@@ -189,7 +189,6 @@ async fn run(command: Command) -> Result<i32> {
                 server,
             },
         )) => {
-            let server_id = ServerUrl::from_str(&server)?;
             let header = jwt::Header::new(jwt::Algorithm::HS256);
 
             let secret_key = if let Some(config_path) = config {
@@ -209,7 +208,7 @@ async fn run(command: Command) -> Result<i32> {
             };
 
             let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)?;
-            let token = create_jwt_server_token(server_id, &header, &secret_key)
+            let token = create_jwt_server_token(server, &header, &secret_key)
                 .context("Failed to create server token")?;
             println!("{}", token);
             Ok(0)
