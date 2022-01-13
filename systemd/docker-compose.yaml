@@ -20,7 +20,7 @@ services:
             RUST_LOG:
             CACHEPOT_NO_DAEMON: 1
             CACHEPOT_CONFIG_TOML: |
-                public_addr = "172.25.0.10:10600"
+                public_addr = "http://172.25.0.10:10600"
                 [server_auth]
                 type = "DANGEROUSLY_INSECURE"
                 [client_auth]
