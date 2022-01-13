@@ -20,6 +20,7 @@ use serde::de::{Deserialize, DeserializeOwned, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
@@ -89,7 +90,7 @@ pub fn parse_size(val: &str) -> Option<u64> {
 }
 
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HTTPUrl(reqwest::Url);
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
 impl Serialize for HTTPUrl {
@@ -114,13 +115,8 @@ impl<'a> Deserialize<'a> for HTTPUrl {
 }
 #[cfg(any(feature = "dist-client", feature = "dist-server"))]
 fn parse_http_url(url: &str) -> Result<reqwest::Url> {
-    use std::net::SocketAddr;
-    let url = if let Ok(sa) = url.parse::<SocketAddr>() {
-        warn!("Url {} has no scheme, assuming http", url);
-        reqwest::Url::parse(&format!("http://{}", sa))
-    } else {
-        reqwest::Url::parse(url)
-    }?;
+    let url = reqwest::Url::parse(url)?;
+
     if url.scheme() != "http" && url.scheme() != "https" {
         bail!("url not http or https")
     }
@@ -135,8 +131,98 @@ impl HTTPUrl {
     pub fn from_url(u: reqwest::Url) -> Self {
         HTTPUrl(u)
     }
-    pub fn to_url(&self) -> reqwest::Url {
-        self.0.clone()
+    pub fn to_url(&self) -> &reqwest::Url {
+        &self.0
+    }
+    pub fn host(&self) -> url::Host<&str> {
+        self.0.host().expect("HTTPUrl always has a valid host; qed")
+    }
+    pub fn host_str(&self) -> &str {
+        self.0
+            .host_str()
+            .expect("HTTPUrl always has a valid host; qed")
+    }
+}
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl FromStr for HTTPUrl {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+        let url = parse_http_url(s)?;
+
+        if !url.has_host() {
+            bail!("HTTPUrl should have a host");
+        }
+        Ok(HTTPUrl(url))
+    }
+}
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl fmt::Display for HTTPUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+// This is the extended `HTTPUrl` with re-implemented
+// `Serialize` and `Deserialize` traits. It is known that
+// servers only use the `https` protocol and as such we can
+// have a special case of `URL`s as `example.com:443`. One benefit
+// of such format is that it can be used in un-urlencoded form as params:
+//
+// `https://localhost:10500/api/v1/scheduler/server_certificate/localhost:10603/`
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ServerUrl(pub HTTPUrl);
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl Serialize for ServerUrl {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let host = self.0.host_str();
+        let helper = if let Some(port) = self.0 .0.port() {
+            format!("{}:{}", host, port)
+        } else {
+            format!("{}", host)
+        };
+        serializer.serialize_str(&helper)
+    }
+}
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl<'a> Deserialize<'a> for ServerUrl {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        use serde::de::Error;
+        let helper: String = Deserialize::deserialize(deserializer)?;
+        let helper = format!("https://{}", helper);
+        let url = parse_http_url(&helper).map_err(D::Error::custom)?;
+        Ok(ServerUrl(HTTPUrl(url)))
+    }
+}
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl FromStr for ServerUrl {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+        let helper = format!("https://{}", s);
+
+        Ok(ServerUrl(HTTPUrl::from_str(&helper)?))
+    }
+}
+#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+impl fmt::Display for ServerUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0 .0.host().expect("HTTPUrl always has a host; qed")
+        )?;
+        if let Some(port) = self.0 .0.port() {
+            write!(f, ":{}", port)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -695,7 +781,7 @@ impl CachedConfig {
 
 #[cfg(feature = "dist-server")]
 pub mod scheduler {
-    use std::net::SocketAddr;
+    use super::HTTPUrl;
     use std::path::Path;
 
     use crate::errors::*;
@@ -738,7 +824,7 @@ pub mod scheduler {
     #[derive(Debug, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Config {
-        pub public_addr: SocketAddr,
+        pub public_addr: HTTPUrl,
         pub client_auth: ClientAuth,
         pub server_auth: ServerAuth,
     }
@@ -750,8 +836,7 @@ pub mod scheduler {
 
 #[cfg(feature = "dist-server")]
 pub mod server {
-    use super::HTTPUrl;
-    use std::net::SocketAddr;
+    use super::{HTTPUrl, ServerUrl};
     use std::path::{Path, PathBuf};
 
     use crate::errors::*;
@@ -791,7 +876,7 @@ pub mod server {
     pub struct Config {
         pub builder: BuilderType,
         pub cache_dir: PathBuf,
-        pub public_addr: SocketAddr,
+        pub public_addr: ServerUrl,
         pub scheduler_url: HTTPUrl,
         pub scheduler_auth: SchedulerAuth,
         #[serde(default = "default_toolchain_cache_size")]

@@ -515,7 +515,7 @@ where
             }
         }?;
         let job_id = job_alloc.job_id;
-        let server_id = job_alloc.server_id;
+        let server_id = job_alloc.server_id.clone();
         debug!("[{}]: Running job", out_pretty);
         let ((job_id, server_id), (jres, path_transformer)) = dist_client
             .do_run_job(
@@ -525,11 +525,11 @@ where
                 inputs_packager,
             )
             .await
-            .map(move |res| ((job_id, server_id), res))
+            .map(|res| ((job_id, server_id.clone()), res))
             .with_context(|| {
                 format!(
                     "could not run distributed compilation job on {:?}",
-                    server_id
+                    server_id.clone()
                 )
             })?;
 
@@ -722,7 +722,7 @@ pub enum DistType {
     /// Distribution was not enabled.
     NoDist,
     /// Distributed compile success.
-    Ok(dist::ServerId),
+    Ok(crate::config::ServerUrl),
     /// Distributed compile failed.
     Error,
 }
@@ -1950,13 +1950,15 @@ LLVM version: 6.0",
 #[cfg(test)]
 #[cfg(feature = "dist-client")]
 mod test_dist {
+    use crate::config::ServerUrl;
     use crate::dist::pkg;
     use crate::dist::{
         self, AllocJobResult, CompileCommand, JobAlloc, JobComplete, JobId, OutputData,
-        PathTransformer, ProcessOutput, RunJobResult, SchedulerStatusResult, ServerId,
-        SubmitToolchainResult, Toolchain,
+        PathTransformer, ProcessOutput, RunJobResult, SchedulerStatusResult, SubmitToolchainResult,
+        Toolchain,
     };
     use std::path::{Path, PathBuf};
+    use std::str::FromStr;
     use std::sync::{atomic::AtomicBool, Arc};
 
     use crate::errors::*;
@@ -2089,7 +2091,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
+                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2158,7 +2160,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
+                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2239,7 +2241,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
+                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })

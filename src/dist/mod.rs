@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use crate::compiler;
+use crate::config::ServerUrl;
 use rand::{rngs::OsRng, RngCore};
 use std::ffi::OsString;
 use std::fmt;
 use std::io::{self, Read};
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::str::FromStr;
@@ -343,29 +343,14 @@ impl fmt::Display for JobId {
         self.0.fmt(f)
     }
 }
+
 impl FromStr for JobId {
     type Err = <u64 as FromStr>::Err;
     fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
         u64::from_str(s).map(JobId)
     }
 }
-#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ServerId(SocketAddr);
-impl ServerId {
-    pub fn new(addr: SocketAddr) -> Self {
-        ServerId(addr)
-    }
-    pub fn addr(&self) -> SocketAddr {
-        self.0
-    }
-}
-impl FromStr for ServerId {
-    type Err = <SocketAddr as FromStr>::Err;
-    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
-        SocketAddr::from_str(s).map(ServerId)
-    }
-}
+
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerNonce(u64);
@@ -514,7 +499,7 @@ impl fmt::Display for OutputDataLens {
 pub struct JobAlloc {
     pub auth: String,
     pub job_id: JobId,
-    pub server_id: ServerId,
+    pub server_id: ServerUrl,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -628,7 +613,7 @@ pub trait SchedulerOutgoing: Send + Sync {
     // To Server
     async fn do_assign_job(
         &self,
-        server_id: ServerId,
+        server_id: ServerUrl,
         job_id: JobId,
         tc: Toolchain,
         auth: String,
@@ -665,7 +650,7 @@ pub trait SchedulerIncoming: Send + Sync {
     // From Server
     fn handle_heartbeat_server(
         &self,
-        server_id: ServerId,
+        server_id: ServerUrl,
         server_nonce: ServerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
@@ -674,7 +659,7 @@ pub trait SchedulerIncoming: Send + Sync {
     fn handle_update_job_state(
         &self,
         job_id: JobId,
-        server_id: ServerId,
+        server_id: ServerUrl,
         job_state: JobState,
     ) -> ExtResult<UpdateJobStateResult, Error>;
     // From anyone
