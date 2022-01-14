@@ -15,7 +15,7 @@
 use crate::cache::disk::DiskCache;
 use crate::client::connect_to_coordinator;
 use crate::commands::{do_compile, request_shutdown, request_stats};
-use crate::coordinator::{CachepotCoordinator, DistClientContainer, ServerMessage};
+use crate::coordinator::{CachepotCoordinator, CoordinatorMessage, DistClientContainer};
 use crate::jobserver::Client;
 use crate::mock_command::*;
 use crate::test::utils::*;
@@ -35,7 +35,7 @@ use tokio::runtime::Runtime;
 
 /// Options for running the server in tests.
 #[derive(Default)]
-struct ServerOptions {
+struct WorkerOptions {
     /// The server's idle shutdown timeout.
     idle_timeout: Option<u64>,
     /// The maximum size of the disk cache.
@@ -46,7 +46,7 @@ struct ServerOptions {
 ///
 /// * The port on which the server is listening.
 /// * A `Sender` which can be used to send messages to the server.
-///   (Most usefully, ServerMessage::Shutdown.)
+///   (Most usefully, CoordinatorMessage::Shutdown.)
 /// * An `Arc`-and-`Mutex`-wrapped `MockCommandCreator` which the server will
 ///   use for all process creation.
 /// * The `JoinHandle` for the server thread.
@@ -55,12 +55,12 @@ fn run_server_thread<T>(
     options: T,
 ) -> (
     u16,
-    Sender<ServerMessage>,
+    Sender<CoordinatorMessage>,
     Arc<Mutex<MockCommandCreator>>,
     thread::JoinHandle<()>,
 )
 where
-    T: Into<Option<ServerOptions>> + Send + 'static,
+    T: Into<Option<WorkerOptions>> + Send + 'static,
 {
     let options = options.into();
     let cache_dir = cache_dir.to_path_buf();
@@ -115,7 +115,7 @@ fn test_server_shutdown_no_idle() {
     // Set a ridiculously low idle timeout.
     let (port, _sender, _storage, child) = run_server_thread(
         f.tempdir.path(),
-        ServerOptions {
+        WorkerOptions {
             idle_timeout: Some(0),
             ..Default::default()
         },
@@ -132,7 +132,7 @@ fn test_server_idle_timeout() {
     // Set a ridiculously low idle timeout.
     let (_port, _sender, _storage, child) = run_server_thread(
         f.tempdir.path(),
-        ServerOptions {
+        WorkerOptions {
             idle_timeout: Some(1),
             ..Default::default()
         },
@@ -154,7 +154,7 @@ fn test_server_stats() {
     let info = request_stats(conn).unwrap();
     assert_eq!(0, info.stats.compile_requests);
     // Now signal it to shut down.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }
@@ -202,7 +202,7 @@ fn test_server_unsupported_compiler() {
     // Make sure we ran the mock processes.
     assert_eq!(0, server_creator.lock().unwrap().children.len());
     // Shut down the server.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }
@@ -271,7 +271,7 @@ fn test_server_compile() {
     assert_eq!(STDOUT, stdout.into_inner().as_slice());
     assert_eq!(STDERR, stderr.into_inner().as_slice());
     // Shut down the server.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }

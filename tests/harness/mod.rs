@@ -1,6 +1,6 @@
 #[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 use cachepot::config::{HTTPUrl, WorkerUrl};
-use cachepot::coordinator::ServerInfo;
+use cachepot::coordinator::CoordinatorInfo;
 use cachepot::dist::{self, SchedulerStatusResult};
 use cachepot::util::fs;
 use std::env;
@@ -58,7 +58,7 @@ pub fn stop_local_daemon() {
     );
 }
 
-pub fn get_stats<F: 'static + Fn(ServerInfo)>(f: F) {
+pub fn get_stats<F: 'static + Fn(CoordinatorInfo)>(f: F) {
     cachepot_command()
         .args(&["--show-stats", "--stats-format=json"])
         .assert()
@@ -401,8 +401,8 @@ impl DistSystem {
                 .unwrap();
             WorkerUrl::from_str(&format!("{}", listener.local_addr().unwrap())).unwrap()
         };
-        let token = create_server_token(server_addr.clone(), DIST_SERVER_TOKEN);
-        let server = dist::http::Server::new(
+        let token = create_server_token(server_addr.clone(), DIST_WORKER_TOKEN);
+        let server = dist::http::Worker::new(
             server_addr.0.to_url().clone(),
             self.scheduler_url().to_url().clone(),
             token,

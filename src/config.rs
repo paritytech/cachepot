@@ -835,7 +835,7 @@ pub mod scheduler {
 }
 
 #[cfg(feature = "dist-worker")]
-pub mod coordinator {
+pub mod worker {
     use super::{HTTPUrl, WorkerUrl};
     use std::path::{Path, PathBuf};
 

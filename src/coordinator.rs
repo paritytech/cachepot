@@ -1354,7 +1354,7 @@ pub struct CoordinatorStats {
     pub dist_errors: u64,
 }
 
-/// Info and stats about the server.
+/// Info and stats about the coordinator.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CoordinatorInfo {
     pub stats: CoordinatorStats,

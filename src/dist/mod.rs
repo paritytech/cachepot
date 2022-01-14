@@ -352,10 +352,10 @@ impl FromStr for JobId {
 }
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ServerNonce(u64);
-impl ServerNonce {
+pub struct WorkerNonce(u64);
+impl WorkerNonce {
     pub fn new() -> Self {
-        ServerNonce(OsRng.next_u64())
+        WorkerNonce(OsRng.next_u64())
     }
 }
 
@@ -530,11 +530,11 @@ pub enum UpdateJobStateResult {
     Fail { msg: String },
 }
 
-// HeartbeatServer
+// HeartbeatWorker
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeartbeatServerResult {
+pub struct HeartbeatWorkerResult {
     pub is_new: bool,
 }
 
@@ -647,13 +647,13 @@ pub trait SchedulerIncoming: Send + Sync {
         tc: Toolchain,
     ) -> ExtResult<AllocJobResult, Error>;
     // From Server
-    fn handle_heartbeat_server(
+    fn handle_heartbeat_worker(
         &self,
         server_id: WorkerUrl,
-        server_nonce: ServerNonce,
+        server_nonce: WorkerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
-    ) -> ExtResult<HeartbeatServerResult, Error>;
+    ) -> ExtResult<HeartbeatWorkerResult, Error>;
     // From Server
     fn handle_update_job_state(
         &self,

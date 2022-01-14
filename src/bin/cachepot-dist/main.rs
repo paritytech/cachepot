@@ -8,14 +8,13 @@ extern crate serde_derive;
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 use cachepot::config::{
-    coordinator as coordinator_config, scheduler as scheduler_config, WorkerUrl,
-    INSECURE_DIST_CLIENT_TOKEN,
+    scheduler as scheduler_config, worker, WorkerUrl, INSECURE_DIST_CLIENT_TOKEN,
 };
 use cachepot::dist::{
     self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, CoordinatorIncoming,
-    CoordinatorOutgoing, HeartbeatServerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
+    CoordinatorOutgoing, HeartbeatWorkerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
     JobId, JobState, RunJobResult, SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult,
-    ServerNonce, SubmitToolchainResult, TcCache, Toolchain, ToolchainReader, UpdateJobStateResult,
+    SubmitToolchainResult, TcCache, Toolchain, ToolchainReader, UpdateJobStateResult, WorkerNonce,
 };
 use cachepot::util::daemonize;
 use jsonwebtoken as jwt;
@@ -41,7 +40,7 @@ pub const INSECURE_DIST_WORKER_TOKEN: &str = "dangerously_insecure_server";
 enum Command {
     Auth(AuthSubcommand),
     Scheduler(SchedulerSubcommand),
-    Server(ServerSubcommand),
+    Worker(WorkerSubcommand),
 }
 
 #[derive(StructOpt)]
@@ -58,7 +57,7 @@ struct SchedulerSubcommand {
 
 #[derive(StructOpt)]
 #[structopt(rename_all = "kebab-case")]
-struct ServerSubcommand {
+struct WorkerSubcommand {
     /// Use the server config file at PATH
     #[structopt(long, value_name = "PATH")]
     config: PathBuf,
@@ -303,15 +302,15 @@ async fn run(command: Command) -> Result<i32> {
             void::unreachable(http_scheduler.start().await?);
         }
 
-        Command::Server(ServerSubcommand { config, syslog }) => {
-            let coordinator_config::Config {
+        Command::Worker(WorkerSubcommand { config, syslog }) => {
+            let worker::Config {
                 builder,
                 cache_dir,
                 public_addr,
                 scheduler_url,
                 scheduler_auth,
                 toolchain_cache_size,
-            } = if let Some(config) = coordinator_config::from_path(&config)? {
+            } = if let Some(config) = worker::from_path(&config)? {
                 config
             } else {
                 bail!("Could not load config!");
@@ -322,10 +321,10 @@ async fn run(command: Command) -> Result<i32> {
             }
 
             let builder: Box<dyn dist::BuilderIncoming> = match builder {
-                coordinator_config::BuilderType::Docker => {
+                worker::BuilderType::Docker => {
                     Box::new(build::DockerBuilder::new().context("Docker builder failed to start")?)
                 }
-                coordinator_config::BuilderType::Overlay {
+                worker::BuilderType::Overlay {
                     bwrap_path,
                     build_dir,
                 } => Box::new(
@@ -336,14 +335,12 @@ async fn run(command: Command) -> Result<i32> {
 
             let server_id = public_addr.clone();
             let scheduler_auth = match scheduler_auth {
-                coordinator_config::SchedulerAuth::Insecure => {
+                worker::SchedulerAuth::Insecure => {
                     warn!("Server starting with DANGEROUSLY_INSECURE scheduler authentication");
                     create_server_token(server_id, INSECURE_DIST_WORKER_TOKEN)
                 }
-                coordinator_config::SchedulerAuth::Token { token } => {
-                    create_server_token(server_id, &token)
-                }
-                coordinator_config::SchedulerAuth::JwtToken { token } => {
+                worker::SchedulerAuth::Token { token } => create_server_token(server_id, &token),
+                worker::SchedulerAuth::JwtToken { token } => {
                     let token_server_id: WorkerUrl =
                         dangerous_insecure_extract_jwt_server_token(&token)
                             .context("Could not decode scheduler auth jwt")?;
@@ -358,9 +355,9 @@ async fn run(command: Command) -> Result<i32> {
                 }
             };
 
-            let server = Server::new(builder, &cache_dir, toolchain_cache_size)
+            let server = Worker::new(builder, &cache_dir, toolchain_cache_size)
                 .context("Failed to create cachepot server instance")?;
-            let http_server = dist::http::Server::new(
+            let http_server = dist::http::Worker::new(
                 public_addr.0.to_url().clone(),
                 scheduler_url.to_url().clone(),
                 scheduler_auth,
@@ -400,10 +397,10 @@ pub struct Scheduler {
     // Currently running jobs, can never be Complete
     jobs: Mutex<BTreeMap<JobId, JobDetail>>,
 
-    servers: Mutex<HashMap<WorkerUrl, ServerDetails>>,
+    servers: Mutex<HashMap<WorkerUrl, WorkerDetails>>,
 }
 
-struct ServerDetails {
+struct WorkerDetails {
     jobs_assigned: HashSet<JobId>,
     // Jobs assigned that haven't seen a state change. Can only be pending
     // or ready.
@@ -411,7 +408,7 @@ struct ServerDetails {
     last_seen: Instant,
     last_error: Option<Instant>,
     num_cpus: usize,
-    server_nonce: ServerNonce,
+    server_nonce: WorkerNonce,
     job_authorizer: Box<dyn JobAuthorizer>,
 }
 
@@ -426,7 +423,7 @@ impl Scheduler {
 
     fn prune_workers(
         &self,
-        servers: &mut MutexGuard<HashMap<WorkerUrl, ServerDetails>>,
+        servers: &mut MutexGuard<HashMap<WorkerUrl, WorkerDetails>>,
         jobs: &mut MutexGuard<BTreeMap<JobId, JobDetail>>,
     ) {
         let now = Instant::now();
@@ -492,7 +489,7 @@ impl SchedulerIncoming for Scheduler {
                             match best_err {
                                 Some((
                                     _,
-                                    &mut ServerDetails {
+                                    &mut WorkerDetails {
                                         last_error: Some(best_last_err),
                                         ..
                                     },
@@ -611,13 +608,13 @@ impl SchedulerIncoming for Scheduler {
         })
     }
 
-    fn handle_heartbeat_server(
+    fn handle_heartbeat_worker(
         &self,
         server_id: WorkerUrl,
-        server_nonce: ServerNonce,
+        server_nonce: WorkerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
-    ) -> Result<HeartbeatServerResult> {
+    ) -> Result<HeartbeatWorkerResult> {
         if num_cpus == 0 {
             bail!("Invalid number of CPUs (0) specified in heartbeat")
         }
@@ -680,7 +677,7 @@ impl SchedulerIncoming for Scheduler {
                     }
                 }
 
-                return Ok(HeartbeatServerResult { is_new: false });
+                return Ok(HeartbeatWorkerResult { is_new: false });
             }
             Some(ref mut details) if details.server_nonce != server_nonce => {
                 for job_id in details.jobs_assigned.iter() {
@@ -697,7 +694,7 @@ impl SchedulerIncoming for Scheduler {
         info!("Registered new server {:?}", server_id);
         servers.insert(
             server_id,
-            ServerDetails {
+            WorkerDetails {
                 last_seen: Instant::now(),
                 last_error: None,
                 jobs_assigned: HashSet::new(),
@@ -707,7 +704,7 @@ impl SchedulerIncoming for Scheduler {
                 job_authorizer,
             },
         );
-        Ok(HeartbeatServerResult { is_new: true })
+        Ok(HeartbeatWorkerResult { is_new: true })
     }
 
     fn handle_update_job_state(
@@ -778,21 +775,21 @@ impl SchedulerIncoming for Scheduler {
     }
 }
 
-pub struct Server {
+pub struct Worker {
     builder: Box<dyn BuilderIncoming>,
     cache: Mutex<TcCache>,
     job_toolchains: tokio::sync::Mutex<HashMap<JobId, Toolchain>>,
 }
 
-impl Server {
+impl Worker {
     pub fn new(
         builder: Box<dyn BuilderIncoming>,
         cache_dir: &Path,
         toolchain_cache_size: u64,
-    ) -> Result<Server> {
+    ) -> Result<Worker> {
         let cache = TcCache::new(&cache_dir.join("tc"), toolchain_cache_size)
             .context("Failed to create toolchain cache")?;
-        Ok(Server {
+        Ok(Worker {
             builder,
             cache: Mutex::new(cache),
             job_toolchains: tokio::sync::Mutex::new(HashMap::new()),
@@ -801,7 +798,7 @@ impl Server {
 }
 
 #[async_trait]
-impl CoordinatorIncoming for Server {
+impl CoordinatorIncoming for Worker {
     async fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self

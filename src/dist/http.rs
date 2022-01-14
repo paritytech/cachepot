@@ -14,7 +14,7 @@
 #[cfg(feature = "dist-client")]
 pub use self::client::Client;
 #[cfg(feature = "dist-worker")]
-pub use self::worker::Server;
+pub use self::worker::Worker;
 #[cfg(feature = "dist-worker")]
 pub use self::worker::{
     CoordinatorAuthCheck, CoordinatorVisibleMsg, Scheduler, WorkerAuthCheck, HEARTBEAT_TIMEOUT,
@@ -128,24 +128,24 @@ mod common {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct ServerCertificateHttpResponse {
+    pub struct WorkerCertificateHttpResponse {
         pub cert_digest: Vec<u8>,
         pub cert_pem: Vec<u8>,
     }
 
     #[derive(Clone, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct HeartbeatServerHttpRequest {
+    pub struct HeartbeatWorkerHttpRequest {
         pub jwt_key: Vec<u8>,
         pub num_cpus: usize,
-        pub server_nonce: dist::ServerNonce,
+        pub server_nonce: dist::WorkerNonce,
         pub cert_digest: Vec<u8>,
         pub cert_pem: Vec<u8>,
     }
     // cert_pem is quite long so elide it (you can retrieve it by hitting the server url anyway)
-    impl fmt::Debug for HeartbeatServerHttpRequest {
+    impl fmt::Debug for HeartbeatWorkerHttpRequest {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            let HeartbeatServerHttpRequest {
+            let HeartbeatWorkerHttpRequest {
                 jwt_key,
                 num_cpus,
                 server_nonce,
@@ -231,13 +231,13 @@ mod worker {
     use void::Void;
 
     use super::common::{
-        bincode_req, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
-        ReqwestRequestBuilderExt, RunJobHttpRequest, ServerCertificateHttpResponse,
+        bincode_req, AllocJobHttpResponse, HeartbeatWorkerHttpRequest, JobJwt,
+        ReqwestRequestBuilderExt, RunJobHttpRequest, WorkerCertificateHttpResponse,
     };
     use super::urls;
     use crate::dist::{
-        self, AssignJobResult, HeartbeatServerResult, JobId, JobState, ServerNonce, Toolchain,
-        UpdateJobStateResult, WorkerUrl,
+        self, AssignJobResult, HeartbeatWorkerResult, JobId, JobState, Toolchain,
+        UpdateJobStateResult, WorkerNonce, WorkerUrl,
     };
     use crate::errors::*;
 
@@ -1242,13 +1242,13 @@ mod worker {
 
         pub(super) mod handlers {
             use super::super::AllocJobHttpResponse;
-            use super::super::{HeartbeatServerHttpRequest, ServerCertificateHttpResponse};
+            use super::super::{HeartbeatWorkerHttpRequest, WorkerCertificateHttpResponse};
             use super::super::{JWTJobAuthorizer, JobId, SchedulerRequester};
             use super::Error;
             use crate::config;
             use crate::dist::{self};
             use crate::dist::{
-                HeartbeatServerResult, JobState, SchedulerStatusResult, UpdateJobStateResult,
+                HeartbeatWorkerResult, JobState, SchedulerStatusResult, UpdateJobStateResult,
             };
             use std::collections::HashMap;
             use std::sync::Arc;
@@ -1278,11 +1278,11 @@ mod worker {
             pub async fn server_certificate(
                 server_id: config::WorkerUrl,
                 certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
-            ) -> Result<ServerCertificateHttpResponse, Rejection> {
+            ) -> Result<WorkerCertificateHttpResponse, Rejection> {
                 let certs = certificates.lock().await;
 
                 let (cert_digest, cert_pem) = certs.get(&server_id).cloned().unwrap();
-                let res = ServerCertificateHttpResponse {
+                let res = WorkerCertificateHttpResponse {
                     cert_digest,
                     cert_pem,
                 };
@@ -1293,11 +1293,11 @@ mod worker {
             pub async fn heartbeat_server(
                 server_id: config::WorkerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
-                heartbeat_server: HeartbeatServerHttpRequest,
+                heartbeat_server: HeartbeatWorkerHttpRequest,
                 server_certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
-            ) -> Result<HeartbeatServerResult, Rejection> {
-                let HeartbeatServerHttpRequest {
+            ) -> Result<HeartbeatWorkerResult, Rejection> {
+                let HeartbeatWorkerHttpRequest {
                     num_cpus,
                     jwt_key,
                     server_nonce,
@@ -1318,8 +1318,8 @@ mod worker {
                 .map_err(|_| Error::UpdateCerts)?;
 
                 let job_authorizer = Box::new(JWTJobAuthorizer::new(jwt_key));
-                let res: HeartbeatServerResult = handler
-                    .handle_heartbeat_server(
+                let res: HeartbeatWorkerResult = handler
+                    .handle_heartbeat_worker(
                         server_id.clone(),
                         server_nonce,
                         num_cpus,
@@ -1466,7 +1466,7 @@ mod worker {
         }
     }
 
-    pub struct Server<S> {
+    pub struct Worker<S> {
         public_addr: reqwest::Url,
         scheduler_url: reqwest::Url,
         scheduler_auth: String,
@@ -1477,11 +1477,11 @@ mod worker {
         // Key used to sign any requests relating to jobs
         jwt_key: Vec<u8>,
         // Randomly generated nonce to allow the scheduler to detect server restarts
-        server_nonce: ServerNonce,
+        server_nonce: WorkerNonce,
         handler: S,
     }
 
-    impl<S: dist::CoordinatorIncoming + 'static> Server<S> {
+    impl<S: dist::CoordinatorIncoming + 'static> Worker<S> {
         pub fn new(
             public_addr: reqwest::Url,
             scheduler_url: reqwest::Url,
@@ -1492,7 +1492,7 @@ mod worker {
                 .context("failed to create HTTPS certificate for server")?;
             let mut jwt_key = vec![0; JWT_KEY_LENGTH];
             OsRng.fill_bytes(&mut jwt_key);
-            let server_nonce = ServerNonce::new();
+            let server_nonce = WorkerNonce::new();
 
             Ok(Self {
                 public_addr,
@@ -1522,7 +1522,7 @@ mod worker {
 
             let handler = Arc::new(handler);
 
-            let heartbeat_req = HeartbeatServerHttpRequest {
+            let heartbeat_req = HeartbeatWorkerHttpRequest {
                 num_cpus: num_cpus::get(),
                 jwt_key: jwt_key.clone(),
                 server_nonce,
@@ -1554,7 +1554,7 @@ mod worker {
                     )
                     .await
                     {
-                        Ok(HeartbeatServerResult { is_new }) => {
+                        Ok(HeartbeatWorkerResult { is_new }) => {
                             trace!("Heartbeat success is_new={}", is_new);
                             // TODO: if is_new, terminate all running jobs
                             time::sleep(HEARTBEAT_INTERVAL).await;
@@ -1629,7 +1629,7 @@ mod client {
 
     use super::common::{
         bincode_req, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
-        ServerCertificateHttpResponse,
+        WorkerCertificateHttpResponse,
     };
     use super::urls;
     use crate::errors::*;
@@ -1736,7 +1736,7 @@ mod client {
                     info!("Need to request new certificate for server {}", server_id);
                     let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
                     let req = client_async.lock().await.get(url);
-                    let res: ServerCertificateHttpResponse = bincode_req(req)
+                    let res: WorkerCertificateHttpResponse = bincode_req(req)
                         .await
                         .context("GET to scheduler server_certificate failed")?;
 
@@ -1870,11 +1870,10 @@ mod client {
 #[cfg(all(test, feature = "vs_openssl"))]
 mod tests {
     use crate::dist::http::worker::create_https_cert_and_privkey;
-    use crate::dist::SocketAddr;
     use anyhow::{Context, Result};
 
     fn legacy_create_https_cert_and_privkey(
-        addr: SocketAddr,
+        addr: &reqwest::Url,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         let rsa_key = openssl::rsa::Rsa::<openssl::pkey::Private>::generate(2048)
             .context("failed to generate rsa privkey")?;
@@ -1925,7 +1924,7 @@ mod tests {
 
         // Add the SubjectAlternativeName
         let extension = openssl::x509::extension::SubjectAlternativeName::new()
-            .ip(&addr.ip().to_string())
+            .uri(&addr.to_string())
             .build(&builder.x509v3_context(None, None))
             .context("failed to build SAN extension for x509")?;
         builder
@@ -1967,11 +1966,16 @@ mod tests {
 
     #[test]
     fn create_cert_and_sk() {
-        let addr = "242.11.9.38:29114".parse().unwrap();
+        use std::str::FromStr;
+
+        let addr = reqwest::Url::from_str("242.11.9.38:29114").unwrap();
+        let addr = &addr;
 
         struct Triple {
+            #[allow(unused)]
             pub cert_digest: Vec<u8>,
             pub cert_pem: Vec<u8>,
+            #[allow(unused)]
             pub privkey_pem: Vec<u8>,
         }
 
