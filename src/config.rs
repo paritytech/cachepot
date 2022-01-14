@@ -833,7 +833,6 @@ pub mod scheduler {
         super::try_read_config_file(conf_path).context("Failed to load scheduler config file")
     }
 }
-
 #[cfg(feature = "dist-server")]
 pub mod server {
     use super::{HTTPUrl, ServerUrl};
