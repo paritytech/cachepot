@@ -8,14 +8,14 @@ extern crate serde_derive;
 use anyhow::{bail, Context, Error, Result};
 use async_trait::async_trait;
 use cachepot::config::{
-    scheduler as scheduler_config, server as server_config, ServerUrl, INSECURE_DIST_CLIENT_TOKEN,
+    coordinator as coordinator_config, scheduler as scheduler_config, WorkerUrl,
+    INSECURE_DIST_CLIENT_TOKEN,
 };
 use cachepot::dist::{
-    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, HeartbeatServerResult,
-    InputsReader, JobAlloc, JobAuthorizer, JobComplete, JobId, JobState, RunJobResult,
-    SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult, ServerIncoming, ServerNonce,
-    ServerOutgoing, SubmitToolchainResult, TcCache, Toolchain, ToolchainReader,
-    UpdateJobStateResult,
+    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, CoordinatorIncoming,
+    CoordinatorOutgoing, HeartbeatServerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
+    JobId, JobState, RunJobResult, SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult,
+    ServerNonce, SubmitToolchainResult, TcCache, Toolchain, ToolchainReader, UpdateJobStateResult,
 };
 use cachepot::util::daemonize;
 use jsonwebtoken as jwt;
@@ -35,7 +35,7 @@ use syslog::Facility;
 mod build;
 mod token_check;
 
-pub const INSECURE_DIST_SERVER_TOKEN: &str = "dangerously_insecure_server";
+pub const INSECURE_DIST_WORKER_TOKEN: &str = "dangerously_insecure_server";
 
 #[derive(StructOpt)]
 enum Command {
@@ -89,7 +89,7 @@ struct GenerateJwtHS256ServerToken {
 
     /// Generate a key for the specified server
     #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
-    server: ServerUrl,
+    server: WorkerUrl,
 }
 
 #[derive(StructOpt)]
@@ -130,15 +130,15 @@ fn check_init_syslog(name: &str, level: &str) -> Result<()> {
     Ok(())
 }
 
-fn create_server_token(server_id: ServerUrl, auth_token: &str) -> String {
+fn create_server_token(server_id: WorkerUrl, auth_token: &str) -> String {
     format!("{} {}", server_id.to_string(), auth_token)
 }
 
-fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerUrl> {
+fn check_server_token(server_token: &str, auth_token: &str) -> Option<WorkerUrl> {
     let mut split = server_token.splitn(2, |c| c == ' ');
     let server_addr = split.next()?;
     match split.next() {
-        Some(t) if t == auth_token => Some(ServerUrl::from_str(server_addr).ok()?),
+        Some(t) if t == auth_token => Some(WorkerUrl::from_str(server_addr).ok()?),
         Some(_) | None => None,
     }
 }
@@ -146,17 +146,17 @@ fn check_server_token(server_token: &str, auth_token: &str) -> Option<ServerUrl>
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ServerJwt {
-    server_id: ServerUrl,
+    server_id: WorkerUrl,
 }
 fn create_jwt_server_token(
-    server_id: ServerUrl,
+    server_id: WorkerUrl,
     header: &jwt::Header,
     key: &[u8],
 ) -> Result<String> {
     let key = jwt::EncodingKey::from_secret(key);
     jwt::encode(header, &ServerJwt { server_id }, &key).map_err(Into::into)
 }
-fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Option<ServerUrl> {
+fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Option<WorkerUrl> {
     jwt::dangerous_insecure_decode::<ServerJwt>(server_token)
         .map(|res| res.claims.server_id)
         .ok()
@@ -165,7 +165,7 @@ fn check_jwt_server_token(
     server_token: &str,
     key: &[u8],
     validation: &jwt::Validation,
-) -> Option<ServerUrl> {
+) -> Option<WorkerUrl> {
     let key = jwt::DecodingKey::from_secret(key);
     jwt::decode::<ServerJwt>(server_token, &key, validation)
         .map(|res| res.claims.server_id)
@@ -194,9 +194,9 @@ async fn run(command: Command) -> Result<i32> {
             let secret_key = if let Some(config_path) = config {
                 if let Some(config) = scheduler_config::from_path(&config_path)? {
                     match config.server_auth {
-                        scheduler_config::ServerAuth::JwtHS256 { secret_key } => secret_key,
-                        scheduler_config::ServerAuth::Insecure
-                        | scheduler_config::ServerAuth::Token { token: _ } => {
+                        scheduler_config::WorkerAuth::JwtHS256 { secret_key } => secret_key,
+                        scheduler_config::WorkerAuth::Insecure
+                        | scheduler_config::WorkerAuth::Token { token: _ } => {
                             bail!("Scheduler not configured with JWT HS256")
                         }
                     }
@@ -226,7 +226,7 @@ async fn run(command: Command) -> Result<i32> {
             let scheduler_config::Config {
                 public_addr,
                 client_auth,
-                server_auth,
+                server_auth: worker_auth,
             } = if let Some(config) = scheduler_config::from_path(&config)? {
                 config
             } else {
@@ -237,40 +237,41 @@ async fn run(command: Command) -> Result<i32> {
                 check_init_syslog("cachepot-buildserver", &syslog)?;
             }
 
-            let check_client_auth: Box<dyn dist::http::ClientAuthCheck> = match client_auth {
-                scheduler_config::ClientAuth::Insecure => Box::new(token_check::EqCheck::new(
-                    INSECURE_DIST_CLIENT_TOKEN.to_owned(),
-                )),
-                scheduler_config::ClientAuth::Token { token } => {
-                    Box::new(token_check::EqCheck::new(token))
-                }
-                scheduler_config::ClientAuth::JwtValidate {
-                    audience,
-                    issuer,
-                    jwks_url,
-                } => Box::new(
-                    token_check::ValidJWTCheck::new(audience, issuer, &jwks_url)
-                        .await
-                        .context("Failed to create a checker for valid JWTs")?,
-                ),
-                scheduler_config::ClientAuth::Mozilla { required_groups } => {
-                    Box::new(token_check::MozillaCheck::new(required_groups))
-                }
-                scheduler_config::ClientAuth::ProxyToken { url, cache_secs } => {
-                    Box::new(token_check::ProxyTokenCheck::new(url, cache_secs))
-                }
-            };
+            let checker_coordinator_auth: Box<dyn dist::http::CoordinatorAuthCheck> =
+                match client_auth {
+                    scheduler_config::ClientAuth::Insecure => Box::new(token_check::EqCheck::new(
+                        INSECURE_DIST_CLIENT_TOKEN.to_owned(),
+                    )),
+                    scheduler_config::ClientAuth::Token { token } => {
+                        Box::new(token_check::EqCheck::new(token))
+                    }
+                    scheduler_config::ClientAuth::JwtValidate {
+                        audience,
+                        issuer,
+                        jwks_url,
+                    } => Box::new(
+                        token_check::ValidJWTCheck::new(audience, issuer, &jwks_url)
+                            .await
+                            .context("Failed to create a checker for valid JWTs")?,
+                    ),
+                    scheduler_config::ClientAuth::Mozilla { required_groups } => {
+                        Box::new(token_check::MozillaCheck::new(required_groups))
+                    }
+                    scheduler_config::ClientAuth::ProxyToken { url, cache_secs } => {
+                        Box::new(token_check::ProxyTokenCheck::new(url, cache_secs))
+                    }
+                };
 
-            let check_server_auth: dist::http::ServerAuthCheck = match server_auth {
-                scheduler_config::ServerAuth::Insecure => {
+            let check_worker_auth: dist::http::WorkerAuthCheck = match worker_auth {
+                scheduler_config::WorkerAuth::Insecure => {
                     warn!("Scheduler starting with DANGEROUSLY_INSECURE server authentication");
-                    let token = INSECURE_DIST_SERVER_TOKEN;
+                    let token = INSECURE_DIST_WORKER_TOKEN;
                     Arc::new(move |server_token| check_server_token(server_token, token))
                 }
-                scheduler_config::ServerAuth::Token { token } => {
+                scheduler_config::WorkerAuth::Token { token } => {
                     Arc::new(move |server_token| check_server_token(server_token, &token))
                 }
-                scheduler_config::ServerAuth::JwtHS256 { secret_key } => {
+                scheduler_config::WorkerAuth::JwtHS256 { secret_key } => {
                     let secret_key = base64::decode_config(&secret_key, base64::URL_SAFE_NO_PAD)
                         .context("Secret key base64 invalid")?;
                     if secret_key.len() != 256 / 8 {
@@ -296,35 +297,35 @@ async fn run(command: Command) -> Result<i32> {
             let http_scheduler = dist::http::Scheduler::new(
                 public_addr.to_url().clone(),
                 scheduler,
-                check_client_auth,
-                check_server_auth,
+                checker_coordinator_auth,
+                check_worker_auth,
             );
             void::unreachable(http_scheduler.start().await?);
         }
 
         Command::Server(ServerSubcommand { config, syslog }) => {
-            let server_config::Config {
+            let coordinator_config::Config {
                 builder,
                 cache_dir,
                 public_addr,
                 scheduler_url,
                 scheduler_auth,
                 toolchain_cache_size,
-            } = if let Some(config) = server_config::from_path(&config)? {
+            } = if let Some(config) = coordinator_config::from_path(&config)? {
                 config
             } else {
                 bail!("Could not load config!");
             };
 
             if let Some(syslog) = syslog {
-                check_init_syslog("cachepot-build-server", &syslog)?;
+                check_init_syslog("cachepot-build-coordinator", &syslog)?;
             }
 
             let builder: Box<dyn dist::BuilderIncoming> = match builder {
-                server_config::BuilderType::Docker => {
+                coordinator_config::BuilderType::Docker => {
                     Box::new(build::DockerBuilder::new().context("Docker builder failed to start")?)
                 }
-                server_config::BuilderType::Overlay {
+                coordinator_config::BuilderType::Overlay {
                     bwrap_path,
                     build_dir,
                 } => Box::new(
@@ -335,15 +336,15 @@ async fn run(command: Command) -> Result<i32> {
 
             let server_id = public_addr.clone();
             let scheduler_auth = match scheduler_auth {
-                server_config::SchedulerAuth::Insecure => {
+                coordinator_config::SchedulerAuth::Insecure => {
                     warn!("Server starting with DANGEROUSLY_INSECURE scheduler authentication");
-                    create_server_token(server_id, INSECURE_DIST_SERVER_TOKEN)
+                    create_server_token(server_id, INSECURE_DIST_WORKER_TOKEN)
                 }
-                server_config::SchedulerAuth::Token { token } => {
+                coordinator_config::SchedulerAuth::Token { token } => {
                     create_server_token(server_id, &token)
                 }
-                server_config::SchedulerAuth::JwtToken { token } => {
-                    let token_server_id: ServerUrl =
+                coordinator_config::SchedulerAuth::JwtToken { token } => {
+                    let token_server_id: WorkerUrl =
                         dangerous_insecure_extract_jwt_server_token(&token)
                             .context("Could not decode scheduler auth jwt")?;
                     if token_server_id != server_id {
@@ -387,7 +388,7 @@ const UNCLAIMED_READY_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 struct JobDetail {
-    server_id: ServerUrl,
+    server_id: WorkerUrl,
     state: JobState,
 }
 
@@ -399,7 +400,7 @@ pub struct Scheduler {
     // Currently running jobs, can never be Complete
     jobs: Mutex<BTreeMap<JobId, JobDetail>>,
 
-    servers: Mutex<HashMap<ServerUrl, ServerDetails>>,
+    servers: Mutex<HashMap<WorkerUrl, ServerDetails>>,
 }
 
 struct ServerDetails {
@@ -423,9 +424,9 @@ impl Scheduler {
         }
     }
 
-    fn prune_servers(
+    fn prune_workers(
         &self,
-        servers: &mut MutexGuard<HashMap<ServerUrl, ServerDetails>>,
+        servers: &mut MutexGuard<HashMap<WorkerUrl, ServerDetails>>,
         jobs: &mut MutexGuard<BTreeMap<JobId, JobDetail>>,
     ) {
         let now = Instant::now();
@@ -612,7 +613,7 @@ impl SchedulerIncoming for Scheduler {
 
     fn handle_heartbeat_server(
         &self,
-        server_id: ServerUrl,
+        server_id: WorkerUrl,
         server_nonce: ServerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
@@ -625,7 +626,7 @@ impl SchedulerIncoming for Scheduler {
         let mut jobs = self.jobs.lock().unwrap();
         let mut servers = self.servers.lock().unwrap();
 
-        self.prune_servers(&mut servers, &mut jobs);
+        self.prune_workers(&mut servers, &mut jobs);
 
         match servers.get_mut(&server_id) {
             Some(ref mut details) if details.server_nonce == server_nonce => {
@@ -712,7 +713,7 @@ impl SchedulerIncoming for Scheduler {
     fn handle_update_job_state(
         &self,
         job_id: JobId,
-        server_id: ServerUrl,
+        server_id: WorkerUrl,
         job_state: JobState,
     ) -> Result<UpdateJobStateResult> {
         // LOCKS
@@ -767,7 +768,7 @@ impl SchedulerIncoming for Scheduler {
         let mut jobs = self.jobs.lock().unwrap();
         let mut servers = self.servers.lock().unwrap();
 
-        self.prune_servers(&mut servers, &mut jobs);
+        self.prune_workers(&mut servers, &mut jobs);
 
         Ok(SchedulerStatusResult {
             num_servers: servers.len(),
@@ -800,7 +801,7 @@ impl Server {
 }
 
 #[async_trait]
-impl ServerIncoming for Server {
+impl CoordinatorIncoming for Server {
     async fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self
@@ -822,7 +823,7 @@ impl ServerIncoming for Server {
     }
     async fn handle_submit_toolchain(
         &self,
-        requester: &dyn ServerOutgoing,
+        requester: &dyn CoordinatorOutgoing,
         job_id: JobId,
         tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
@@ -850,7 +851,7 @@ impl ServerIncoming for Server {
     }
     async fn handle_run_job(
         &self,
-        requester: &dyn ServerOutgoing,
+        requester: &dyn CoordinatorOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,

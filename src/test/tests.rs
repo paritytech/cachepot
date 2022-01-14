@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use crate::cache::disk::DiskCache;
-use crate::client::connect_to_server;
+use crate::client::connect_to_coordinator;
 use crate::commands::{do_compile, request_shutdown, request_stats};
+use crate::coordinator::{CachepotCoordinator, DistClientContainer, ServerMessage};
 use crate::jobserver::Client;
 use crate::mock_command::*;
-use crate::server::{CachepotServer, DistClientContainer, ServerMessage};
 use crate::test::utils::*;
 use crate::util::fs::File;
 use futures::channel::oneshot::{self, Sender};
@@ -79,8 +79,8 @@ where
         let storage = Arc::new(DiskCache::new(&cache_dir, cache_size, runtime.handle()));
 
         let client = unsafe { Client::new() };
-        let srv = CachepotServer::new(0, runtime, client, dist_client, storage).unwrap();
-        let mut srv: CachepotServer<Arc<Mutex<MockCommandCreator>>> = srv;
+        let srv = CachepotCoordinator::new(0, runtime, client, dist_client, storage).unwrap();
+        let mut srv: CachepotCoordinator<Arc<Mutex<MockCommandCreator>>> = srv;
         assert!(srv.port() > 0);
         if let Some(options) = options {
             if let Some(timeout) = options.idle_timeout {
@@ -101,7 +101,7 @@ fn test_server_shutdown() {
     let f = TestFixture::new();
     let (port, _sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     // Ask it to shut down
     request_shutdown(conn).unwrap();
     // Ensure that it shuts down.
@@ -121,7 +121,7 @@ fn test_server_shutdown_no_idle() {
         },
     );
 
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     request_shutdown(conn).unwrap();
     child.join().unwrap();
 }
@@ -149,7 +149,7 @@ fn test_server_stats() {
     let f = TestFixture::new();
     let (port, sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     // Ask it for stats.
     let info = request_stats(conn).unwrap();
     assert_eq!(0, info.stats.compile_requests);
@@ -164,7 +164,7 @@ fn test_server_unsupported_compiler() {
     let f = TestFixture::new();
     let (port, sender, server_creator, child) = run_server_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     {
         let mut c = server_creator.lock().unwrap();
         // The server will check the compiler, so pretend to be an unsupported
@@ -217,7 +217,7 @@ fn test_server_compile() {
     const PREPROCESSOR_STDERR: &[u8] = b"preprocessor stderr";
     const STDOUT: &[u8] = b"some stdout";
     const STDERR: &[u8] = b"some stderr";
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     {
         let mut c = server_creator.lock().unwrap();
         // The server will check the compiler. Pretend it's GCC.
@@ -285,7 +285,7 @@ fn test_server_port_in_use() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let cachepot = find_cachepot_binary();
     let output = Command::new(&cachepot)
-        .arg("--start-server")
+        .arg("--start-coordinator")
         .env(
             "CACHEPOT_SERVER_PORT",
             listener.local_addr().unwrap().port().to_string(),

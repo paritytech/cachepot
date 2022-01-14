@@ -1,4 +1,4 @@
-#![cfg(all(feature = "dist-client", feature = "dist-server"))]
+#![cfg(all(feature = "dist-client", feature = "dist-worker"))]
 
 extern crate assert_cmd;
 #[macro_use]
@@ -13,8 +13,8 @@ use crate::harness::{
 use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{
-    AssignJobResult, CompileCommand, InputsReader, JobId, JobState, RunJobResult, ServerIncoming,
-    ServerOutgoing, SubmitToolchainResult, Toolchain, ToolchainReader,
+    AssignJobResult, CompileCommand, CoordinatorIncoming, CoordinatorOutgoing, InputsReader, JobId,
+    JobState, RunJobResult, SubmitToolchainResult, Toolchain, ToolchainReader,
 };
 use serial_test::serial;
 use std::ffi::OsStr;
@@ -165,7 +165,7 @@ async fn test_dist_nobuilder() {
 
 struct FailingServer;
 #[async_trait]
-impl ServerIncoming for FailingServer {
+impl CoordinatorIncoming for FailingServer {
     async fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = false;
         let state = JobState::Ready;
@@ -176,7 +176,7 @@ impl ServerIncoming for FailingServer {
     }
     async fn handle_submit_toolchain(
         &self,
-        _requester: &dyn ServerOutgoing,
+        _requester: &dyn CoordinatorOutgoing,
         _job_id: JobId,
         _tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
@@ -184,7 +184,7 @@ impl ServerIncoming for FailingServer {
     }
     async fn handle_run_job(
         &self,
-        requester: &dyn ServerOutgoing,
+        requester: &dyn CoordinatorOutgoing,
         job_id: JobId,
         _command: CompileCommand,
         _outputs: Vec<String>,

@@ -1,7 +1,7 @@
 use crate::jwt;
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use cachepot::dist::http::{ClientAuthCheck, ClientVisibleMsg};
+use cachepot::dist::http::{CoordinatorAuthCheck, CoordinatorVisibleMsg};
 use cachepot::util::RequestExt;
 use std::collections::HashMap;
 use std::result::Result as StdResult;
@@ -53,13 +53,13 @@ pub struct EqCheck {
 }
 
 #[async_trait]
-impl ClientAuthCheck for EqCheck {
-    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+impl CoordinatorAuthCheck for EqCheck {
+    async fn check(&self, token: &str) -> StdResult<(), CoordinatorVisibleMsg> {
         if self.s == token {
             Ok(())
         } else {
             warn!("User token {} != expected token {}", token, self.s);
-            Err(ClientVisibleMsg::from_nonsensitive(
+            Err(CoordinatorVisibleMsg::from_nonsensitive(
                 "Fixed token mismatch".to_owned(),
             ))
         }
@@ -84,11 +84,11 @@ pub struct MozillaCheck {
 }
 
 #[async_trait]
-impl ClientAuthCheck for MozillaCheck {
-    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+impl CoordinatorAuthCheck for MozillaCheck {
+    async fn check(&self, token: &str) -> StdResult<(), CoordinatorVisibleMsg> {
         self.check_mozilla(token).await.map_err(|e| {
             warn!("Mozilla token validation failed: {}", e);
-            ClientVisibleMsg::from_nonsensitive(
+            CoordinatorVisibleMsg::from_nonsensitive(
                 "Failed to validate Mozilla OAuth token, run cachepot --dist-auth".to_owned(),
             )
         })
@@ -165,7 +165,7 @@ impl MozillaCheck {
         }
 
         // The API didn't return a HTTP error code, let's check the response
-        let () = check_mozilla_profile(&user, &self.required_groups, &res_text)
+        check_mozilla_profile(&user, &self.required_groups, &res_text)
             .with_context(|| format!("Validation of the user profile failed for {}", user))?;
 
         // Validation success, cache the token
@@ -248,13 +248,13 @@ pub struct ProxyTokenCheck {
 }
 
 #[async_trait]
-impl ClientAuthCheck for ProxyTokenCheck {
-    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+impl CoordinatorAuthCheck for ProxyTokenCheck {
+    async fn check(&self, token: &str) -> StdResult<(), CoordinatorVisibleMsg> {
         match self.check_token_with_forwarding(token).await {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("Proxying token validation failed: {}", e);
-                Err(ClientVisibleMsg::from_nonsensitive(
+                Err(CoordinatorVisibleMsg::from_nonsensitive(
                     "Validation with token forwarding failed".to_owned(),
                 ))
             }
@@ -318,13 +318,13 @@ pub struct ValidJWTCheck {
 }
 
 #[async_trait]
-impl ClientAuthCheck for ValidJWTCheck {
-    async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg> {
+impl CoordinatorAuthCheck for ValidJWTCheck {
+    async fn check(&self, token: &str) -> StdResult<(), CoordinatorVisibleMsg> {
         match self.check_jwt_validity(token) {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("JWT validation failed: {}", e);
-                Err(ClientVisibleMsg::from_nonsensitive(
+                Err(CoordinatorVisibleMsg::from_nonsensitive(
                     "JWT could not be validated".to_owned(),
                 ))
             }

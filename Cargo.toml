@@ -22,7 +22,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "cachepot-dist"
-required-features = ["dist-server"]
+required-features = ["dist-worker"]
 path = "src/bin/cachepot-dist/main.rs"
 
 [dependencies]
@@ -97,7 +97,7 @@ structopt = "0.3.25"
 strum = { version = "0.23.0", features = ["derive"] }
 native-tls = "0.2.8"
 
-# dist-server only
+# dist-worker only
 crossbeam-utils = { version = "0.8", optional = true }
 libmount = { version = "0.1.10", optional = true }
 nix = { version = "0.19", optional = true }
@@ -147,11 +147,11 @@ unstable = []
 # Enables distributed support in the cachepot client
 dist-client = ["ar", "flate2", "hyper", "hyperx", "reqwest/stream", "url", "sha2", "tokio/fs"]
 # Enables the cachepot-dist binary
-dist-server = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest",  "sha2", "syslog", "void", "version-compare", "warp", "thiserror"]
+dist-worker = ["chrono", "crossbeam-utils", "jsonwebtoken", "flate2", "hyperx", "libmount", "nix", "reqwest",  "sha2", "syslog", "void", "version-compare", "warp", "thiserror"]
 # Enables dist tests with external requirements
-dist-tests = ["dist-client", "dist-server"]
+dist-tests = ["dist-client", "dist-worker"]
 # Run JWK token crypto against openssl ref impl
-vs_openssl = ["openssl", "dist-server"]
+vs_openssl = ["openssl", "dist-worker"]
 
 # Make sure to always optimize big integer calculations as this cuts down
 # certificate generation time by two orders of magnitude (down to ~0.1s)

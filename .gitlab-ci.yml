@@ -112,7 +112,7 @@ build:
   <<:                              *build-refs
   stage:                           build
   variables:
-    FEATURES:                     "openssl/vendored,dist-server"
+    FEATURES:                     "openssl/vendored,dist-worker"
   script:
     - cargo +stable build --locked --release --verbose --bin cachepot-dist --target x86_64-unknown-linux-musl --features=${FEATURES}
     # collect artifacts

@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::client::{connect_to_server, connect_with_retry, ServerConnection};
+use crate::client::{connect_to_coordinator, connect_with_retry, CoordinatorConnection};
 use crate::cmdline::{Command, StatsFormat};
 use crate::compiler::ColorMode;
 use crate::config::Config;
+use crate::coordinator::{self, CoordinatorInfo, CoordinatorStartup, DistInfo};
 use crate::jobserver::Client;
 use crate::mock_command::{CommandChild, CommandCreatorSync, ProcessCommandCreator, RunCommand};
 use crate::protocol::{Compile, CompileFinished, CompileResponse, Request, Response};
-use crate::server::{self, DistInfo, ServerInfo, ServerStartup};
 use crate::util::daemonize;
 use crate::util::fs::{File, OpenOptions};
 use atty::Stream;
@@ -39,30 +39,30 @@ use which::which_in;
 
 use crate::errors::*;
 
-/// The default cachepot server port.
+/// The default cachepot coordinator port.
 pub const DEFAULT_PORT: u16 = 4226;
 
-/// The number of milliseconds to wait for server startup.
-const SERVER_STARTUP_TIMEOUT_MS: u32 = 10000;
+/// The number of milliseconds to wait for coordinator startup.
+const COORDINATOR_STARTUP_TIMEOUT_MS: u32 = 10000;
 
-/// Get the port on which the server should listen.
+/// Get the port on which the coordinator should listen.
 fn get_port() -> u16 {
-    env::var("CACHEPOT_SERVER_PORT")
+    env::var("CACHEPOT_COORDINATOR_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_PORT)
 }
 
-async fn read_server_startup_status<R: AsyncReadExt + Unpin>(
-    mut server: R,
-) -> Result<ServerStartup> {
-    // This is an async equivalent of ServerConnection::read_one_response
+async fn read_coordinator_startup_status<R: AsyncReadExt + Unpin>(
+    mut coordinator: R,
+) -> Result<CoordinatorStartup> {
+    // This is an async equivalent of CoordinatorConnection::read_one_response
     let mut bytes = [0u8; 4];
-    server.read_exact(&mut bytes[..]).await?;
+    coordinator.read_exact(&mut bytes[..]).await?;
 
     let len = BigEndian::read_u32(&bytes);
     let mut data = vec![0; len as usize];
-    server.read_exact(data.as_mut_slice()).await?;
+    coordinator.read_exact(data.as_mut_slice()).await?;
 
     Ok(bincode::deserialize(&data)?)
 }
@@ -70,10 +70,10 @@ async fn read_server_startup_status<R: AsyncReadExt + Unpin>(
 /// Re-execute the current executable as a background server, and wait
 /// for it to start up.
 #[cfg(not(windows))]
-fn run_server_process() -> Result<ServerStartup> {
+fn run_coordinator_process() -> Result<CoordinatorStartup> {
     use std::time::Duration;
 
-    trace!("run_server_process");
+    trace!("run_coordinator_process");
     let tempdir = tempfile::Builder::new().prefix("cachepot").tempdir()?;
     let socket_path = tempdir.path().join("sock");
     let runtime = Runtime::new()?;
@@ -81,7 +81,7 @@ fn run_server_process() -> Result<ServerStartup> {
     let workdir = exe_path.parent().expect("executable path has no parent?!");
     let _child = process::Command::new(&exe_path)
         .current_dir(workdir)
-        .env("CACHEPOT_START_SERVER", "1")
+        .env("CACHEPOT_START_COORDINATOR", "1")
         .env("CACHEPOT_STARTUP_NOTIFY", &socket_path)
         .env("RUST_BACKTRACE", "1")
         .spawn()?;
@@ -90,14 +90,14 @@ fn run_server_process() -> Result<ServerStartup> {
         let listener = tokio::net::UnixListener::bind(&socket_path)?;
         let (socket, _) = listener.accept().await?;
 
-        read_server_startup_status(socket).await
+        read_coordinator_startup_status(socket).await
     };
 
-    let timeout = Duration::from_millis(SERVER_STARTUP_TIMEOUT_MS.into());
+    let timeout = Duration::from_millis(COORDINATOR_STARTUP_TIMEOUT_MS.into());
     runtime.block_on(async move {
         match tokio::time::timeout(timeout, startup).await {
             Ok(result) => result,
-            Err(_elapsed) => Ok(ServerStartup::TimedOut),
+            Err(_elapsed) => Ok(CoordinatorStartup::TimedOut),
         }
     })
 }
@@ -136,7 +136,7 @@ fn redirect_error_log() -> Result<()> {
 
 /// Re-execute the current executable as a background server.
 #[cfg(windows)]
-fn run_server_process() -> Result<ServerStartup> {
+fn run_coordinator_process() -> Result<CoordinatorStartup> {
     use futures::StreamExt;
     use std::mem;
     use std::os::windows::ffi::OsStrExt;
@@ -150,13 +150,13 @@ fn run_server_process() -> Result<ServerStartup> {
         CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT,
     };
 
-    trace!("run_server_process");
+    trace!("run_coordinator_process");
 
     // Create a mini event loop and register our named pipe server
     let runtime = Runtime::new()?;
     let pipe_name = format!(r"\\.\pipe\{}", Uuid::new_v4().to_simple_ref());
 
-    // Spawn a server which should come back and connect to us
+    // Spawn a coordinator which should come back and connect to us
     let exe_path = env::current_exe()?;
     let mut exe = OsStr::new(&exe_path)
         .encode_wide()
@@ -165,7 +165,10 @@ fn run_server_process() -> Result<ServerStartup> {
     let mut envp = {
         let mut v = vec![];
         let extra_vars = vec![
-            (OsString::from("CACHEPOT_START_SERVER"), OsString::from("1")),
+            (
+                OsString::from("CACHEPOT_START_COORDINATOR"),
+                OsString::from("1"),
+            ),
             (
                 OsString::from("CACHEPOT_STARTUP_NOTIFY"),
                 OsString::from(&pipe_name),
@@ -233,19 +236,19 @@ fn run_server_process() -> Result<ServerStartup> {
         read_server_startup_status(socket?).await
     };
 
-    let timeout = Duration::from_millis(SERVER_STARTUP_TIMEOUT_MS.into());
+    let timeout = Duration::from_millis(COORDINATOR_STARTUP_TIMEOUT_MS.into());
     runtime.block_on(async move {
         match tokio::time::timeout(timeout, startup).await {
             Ok(result) => result,
-            Err(_elapsed) => Ok(ServerStartup::TimedOut),
+            Err(_elapsed) => Ok(CoordinatorStartup::TimedOut),
         }
     })
 }
 
-/// Attempt to connect to an cachepot server listening on `port`, or start one if no server is running.
-fn connect_or_start_server(port: u16) -> Result<ServerConnection> {
+/// Attempt to connect to an cachepot coordinator listening on `port`, or start one if no coordinator is running.
+fn connect_or_start_server(port: u16) -> Result<CoordinatorConnection> {
     trace!("connect_or_start_server({})", port);
-    match connect_to_server(port) {
+    match connect_to_coordinator(port) {
         Ok(server) => Ok(server),
         Err(ref e)
             if e.kind() == io::ErrorKind::ConnectionRefused
@@ -253,8 +256,8 @@ fn connect_or_start_server(port: u16) -> Result<ServerConnection> {
         {
             // If the connection was refused we probably need to start
             // the server.
-            match run_server_process()? {
-                ServerStartup::Ok { port: actualport } => {
+            match run_coordinator_process()? {
+                CoordinatorStartup::Ok { port: actualport } => {
                     if port != actualport {
                         // bail as the next connect_with_retry will fail
                         bail!(
@@ -264,34 +267,36 @@ fn connect_or_start_server(port: u16) -> Result<ServerConnection> {
                         );
                     }
                 }
-                ServerStartup::AddrInUse => {
-                    debug!("AddrInUse: possible parallel server bootstraps, retrying..")
+                CoordinatorStartup::AddrInUse => {
+                    debug!("AddrInUse: possible parallel coordinator bootstraps, retrying..")
                 }
-                ServerStartup::TimedOut => bail!("Timed out waiting for server startup"),
-                ServerStartup::Err { reason } => bail!("Server startup failed: {}", reason),
+                CoordinatorStartup::TimedOut => bail!("Timed out waiting for coordinator startup"),
+                CoordinatorStartup::Err { reason } => {
+                    bail!("Coordinator startup failed: {}", reason)
+                }
             }
-            let server = connect_with_retry(port)?;
-            Ok(server)
+            let coordinator = connect_with_retry(port)?;
+            Ok(coordinator)
         }
         Err(e) => Err(e.into()),
     }
 }
 
-/// Send a `ZeroStats` request to the server, and return the `ServerInfo` request if successful.
-pub fn request_zero_stats(mut conn: ServerConnection) -> Result<ServerInfo> {
+/// Send a `ZeroStats` request to the server, and return the `CoordinatorInfo` request if successful.
+pub fn request_zero_stats(mut conn: CoordinatorConnection) -> Result<CoordinatorInfo> {
     debug!("request_stats");
-    let response = conn
-        .request(Request::ZeroStats)
-        .context("failed to send zero statistics command to server or failed to receive respone")?;
+    let response = conn.request(Request::ZeroStats).context(
+        "failed to send zero statistics command to coordinator or failed to receive respone",
+    )?;
     if let Response::Stats(stats) = response {
         Ok(*stats)
     } else {
-        bail!("Unexpected server response!")
+        bail!("Unexpected coordinator response!")
     }
 }
 
-/// Send a `GetStats` request to the server, and return the `ServerInfo` request if successful.
-pub fn request_stats(mut conn: ServerConnection) -> Result<ServerInfo> {
+/// Send a `GetStats` request to the server, and return the `CoordinatorInfo` request if successful.
+pub fn request_stats(mut conn: CoordinatorConnection) -> Result<CoordinatorInfo> {
     debug!("request_stats");
     let response = conn
         .request(Request::GetStats)
@@ -299,12 +304,12 @@ pub fn request_stats(mut conn: ServerConnection) -> Result<ServerInfo> {
     if let Response::Stats(stats) = response {
         Ok(*stats)
     } else {
-        bail!("Unexpected server response!")
+        bail!("Unexpected coordinator response!")
     }
 }
 
 /// Send a `DistStatus` request to the server, and return `DistStatus` if successful.
-pub fn request_dist_status(mut conn: ServerConnection) -> Result<DistInfo> {
+pub fn request_dist_status(mut conn: CoordinatorConnection) -> Result<DistInfo> {
     debug!("request_dist_status");
     let response = conn
         .request(Request::DistStatus)
@@ -312,12 +317,12 @@ pub fn request_dist_status(mut conn: ServerConnection) -> Result<DistInfo> {
     if let Response::DistStatus(info) = response {
         Ok(info)
     } else {
-        bail!("Unexpected server response!")
+        bail!("Unexpected coordinator response!")
     }
 }
 
-/// Send a `Shutdown` request to the server, and return the `ServerInfo` contained within the response if successful.
-pub fn request_shutdown(mut conn: ServerConnection) -> Result<ServerInfo> {
+/// Send a `Shutdown` request to the server, and return the `CoordinatorInfo` contained within the response if successful.
+pub fn request_shutdown(mut conn: CoordinatorConnection) -> Result<CoordinatorInfo> {
     debug!("request_shutdown");
     //TODO: better error mapping
     let response = conn
@@ -326,13 +331,13 @@ pub fn request_shutdown(mut conn: ServerConnection) -> Result<ServerInfo> {
     if let Response::ShuttingDown(stats) = response {
         Ok(*stats)
     } else {
-        bail!("Unexpected server response!")
+        bail!("Unexpected coordinator response!")
     }
 }
 
-/// Send a `Compile` request to the server, and return the server response if successful.
+/// Send a `Compile` request to the server, and return the coordinator response if successful.
 fn request_compile<W, X, Y>(
-    conn: &mut ServerConnection,
+    conn: &mut CoordinatorConnection,
     exe: W,
     args: &[X],
     cwd: Y,
@@ -361,7 +366,7 @@ where
     }
 }
 
-pub fn request_clear_cache(mut conn: ServerConnection) -> Result<()> {
+pub fn request_clear_cache(mut conn: CoordinatorConnection) -> Result<()> {
     debug!("clear_cache");
     conn.request(Request::ClearCache)
         .context("Failed to send data to or receive data from server")?;
@@ -413,7 +418,7 @@ fn handle_compile_finished(
         }
         Ok(())
     }
-    // It might be nice if the server sent stdout/stderr as the process
+    // It might be nice if the coordinator sent stdout/stderr as the process
     // ran, but then it would have to also save them in the cache as
     // interleaved streams to really make it work.
     write_output(
@@ -443,16 +448,16 @@ fn handle_compile_finished(
 
 /// Handle `response`, the response from sending a `Compile` request to the server. Return the compiler exit status.
 ///
-/// If the server returned `CompileStarted`, wait for a `CompileFinished` and
+/// If the coordinator returned `CompileStarted`, wait for a `CompileFinished` and
 /// print the results.
 ///
-/// If the server returned `UnhandledCompile`, run the compilation command
+/// If the coordinator returned `UnhandledCompile`, run the compilation command
 /// locally using `creator` and return the result.
 #[allow(clippy::too_many_arguments)]
 fn handle_compile_response<T>(
     mut creator: T,
     runtime: &mut Runtime,
-    conn: &mut ServerConnection,
+    conn: &mut CoordinatorConnection,
     response: CompileResponse,
     exe: &Path,
     cmdline: Vec<OsString>,
@@ -465,7 +470,7 @@ where
 {
     match response {
         CompileResponse::CompileStarted => {
-            debug!("Server sent CompileStarted");
+            debug!("Coordinator sent CompileStarted");
             // Wait for CompileFinished.
             match conn.read_one_response() {
                 Ok(Response::CompileFinished(result)) => {
@@ -476,7 +481,7 @@ where
                     match e.downcast_ref::<io::Error>() {
                         Some(io_e) if io_e.kind() == io::ErrorKind::UnexpectedEof => {
                             eprintln!(
-                                "cachepot: warning: The server looks like it shut down \
+                                "cachepot: warning: The coordinator looks like it shut down \
                                  unexpectedly, compiling locally instead"
                             );
                         }
@@ -489,11 +494,11 @@ where
             }
         }
         CompileResponse::UnsupportedCompiler(s) => {
-            debug!("Server sent UnsupportedCompiler: {:?}", s);
+            debug!("Coordinator sent UnsupportedCompiler: {:?}", s);
             bail!("Compiler not supported: {:?}", s);
         }
         CompileResponse::UnhandledCompile => {
-            debug!("Server sent UnhandledCompile");
+            debug!("Coordinator sent UnhandledCompile");
         }
     };
 
@@ -520,7 +525,7 @@ where
     }))
 }
 
-/// Send a `Compile` request to the cachepot server `conn`, and handle the response.
+/// Send a `Compile` request to the cachepot coordinator `conn`, and handle the response.
 ///
 /// The first entry in `cmdline` will be looked up in `path` if it is not
 /// an absolute path.
@@ -529,7 +534,7 @@ where
 pub fn do_compile<T>(
     creator: T,
     runtime: &mut Runtime,
-    mut conn: ServerConnection,
+    mut conn: CoordinatorConnection,
     exe: &Path,
     cmdline: Vec<OsString>,
     cwd: &Path,
@@ -565,33 +570,39 @@ pub fn run_command(cmd: Command) -> Result<i32> {
                 StatsFormat::json => serde_json::to_writer(&mut io::stdout(), &stats)?,
             }
         }
-        Command::InternalStartServer => {
-            trace!("Command::InternalStartServer");
+        Command::InternalStartCoordinator => {
+            trace!("Command::InternalStartCoordinator");
             // Can't report failure here, we're already daemonized.
             daemonize()?;
             redirect_error_log()?;
-            server::start_server(config, get_port())?;
+            coordinator::start_coordinator(config, get_port())?;
         }
-        Command::StartServer => {
-            trace!("Command::StartServer");
+        Command::StartCoordinator => {
+            trace!("Command::StartCoordinator");
             println!("cachepot: Starting the server...");
-            let startup = run_server_process().context("failed to start server process")?;
+            let startup =
+                run_coordinator_process().context("failed to start coordinator process")?;
             match startup {
-                ServerStartup::Ok { port } => {
+                CoordinatorStartup::Ok { port } => {
                     if port != DEFAULT_PORT {
                         println!("cachepot: Listening on port {}", port);
                     }
                 }
-                ServerStartup::TimedOut => bail!("Timed out waiting for server startup"),
-                ServerStartup::AddrInUse => bail!("Server startup failed: Address in use"),
-                ServerStartup::Err { reason } => bail!("Server startup failed: {}", reason),
+                CoordinatorStartup::TimedOut => bail!("Timed out waiting for coordinator startup"),
+                CoordinatorStartup::AddrInUse => {
+                    bail!("Coordinator startup failed: Address in use")
+                }
+                CoordinatorStartup::Err { reason } => {
+                    bail!("Coordinator startup failed: {}", reason)
+                }
             }
         }
-        Command::StopServer => {
-            trace!("Command::StopServer");
+        Command::StopCoordinator => {
+            trace!("Command::StopCoordinator");
             println!("Stopping cachepot server...");
-            let server = connect_to_server(get_port()).context("couldn't connect to server")?;
-            let stats = request_shutdown(server)?;
+            let coordinator =
+                connect_to_coordinator(get_port()).context("couldn't connect to server")?;
+            let stats = request_shutdown(coordinator)?;
             stats.print();
         }
         Command::ZeroStats => {

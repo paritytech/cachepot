@@ -722,7 +722,7 @@ pub enum DistType {
     /// Distribution was not enabled.
     NoDist,
     /// Distributed compile success.
-    Ok(crate::config::ServerUrl),
+    Ok(crate::config::WorkerUrl),
     /// Distributed compile failed.
     Error,
 }
@@ -1950,7 +1950,7 @@ LLVM version: 6.0",
 #[cfg(test)]
 #[cfg(feature = "dist-client")]
 mod test_dist {
-    use crate::config::ServerUrl;
+    use crate::config::WorkerUrl;
     use crate::dist::pkg;
     use crate::dist::{
         self, AllocJobResult, CompileCommand, JobAlloc, JobComplete, JobId, OutputData,
@@ -2091,7 +2091,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    server_id: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2160,7 +2160,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    server_id: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2241,7 +2241,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    server_id: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })

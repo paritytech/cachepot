@@ -16,7 +16,7 @@ use crate::util::fs::{self, File};
 use directories::ProjectDirs;
 use regex::Regex;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer};
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 use serde::ser::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::env;
@@ -89,10 +89,10 @@ pub fn parse_size(val: &str) -> Option<u64> {
         })
 }
 
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HTTPUrl(reqwest::Url);
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 impl Serialize for HTTPUrl {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -101,7 +101,7 @@ impl Serialize for HTTPUrl {
         serializer.serialize_str(self.0.as_str())
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 impl<'a> Deserialize<'a> for HTTPUrl {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
@@ -113,7 +113,7 @@ impl<'a> Deserialize<'a> for HTTPUrl {
         Ok(HTTPUrl(url))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 fn parse_http_url(url: &str) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(url)?;
 
@@ -126,7 +126,7 @@ fn parse_http_url(url: &str) -> Result<reqwest::Url> {
     }
     Ok(url)
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 impl HTTPUrl {
     pub fn from_url(u: reqwest::Url) -> Self {
         HTTPUrl(u)
@@ -143,7 +143,7 @@ impl HTTPUrl {
             .expect("HTTPUrl always has a valid host; qed")
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 impl FromStr for HTTPUrl {
     type Err = anyhow::Error;
 
@@ -156,7 +156,7 @@ impl FromStr for HTTPUrl {
         Ok(HTTPUrl(url))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 impl fmt::Display for HTTPUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -169,11 +169,11 @@ impl fmt::Display for HTTPUrl {
 // of such format is that it can be used in un-urlencoded form as params:
 //
 // `https://localhost:10500/api/v1/scheduler/server_certificate/localhost:10603/`
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ServerUrl(pub HTTPUrl);
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
-impl Serialize for ServerUrl {
+pub struct WorkerUrl(pub HTTPUrl);
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+impl Serialize for WorkerUrl {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
         S: Serializer,
@@ -187,8 +187,8 @@ impl Serialize for ServerUrl {
         serializer.serialize_str(&helper)
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
-impl<'a> Deserialize<'a> for ServerUrl {
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+impl<'a> Deserialize<'a> for WorkerUrl {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: Deserializer<'a>,
@@ -197,21 +197,21 @@ impl<'a> Deserialize<'a> for ServerUrl {
         let helper: String = Deserialize::deserialize(deserializer)?;
         let helper = format!("https://{}", helper);
         let url = parse_http_url(&helper).map_err(D::Error::custom)?;
-        Ok(ServerUrl(HTTPUrl(url)))
+        Ok(WorkerUrl(HTTPUrl(url)))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
-impl FromStr for ServerUrl {
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+impl FromStr for WorkerUrl {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
         let helper = format!("https://{}", s);
 
-        Ok(ServerUrl(HTTPUrl::from_str(&helper)?))
+        Ok(WorkerUrl(HTTPUrl::from_str(&helper)?))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
-impl fmt::Display for ServerUrl {
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+impl fmt::Display for WorkerUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -465,9 +465,9 @@ impl Default for DistAuth {
 #[serde(deny_unknown_fields)]
 pub struct DistConfig {
     pub auth: DistAuth,
-    #[cfg(any(feature = "dist-client", feature = "dist-server"))]
+    #[cfg(any(feature = "dist-client", feature = "dist-worker"))]
     pub scheduler_url: Option<HTTPUrl>,
-    #[cfg(not(any(feature = "dist-client", feature = "dist-server")))]
+    #[cfg(not(any(feature = "dist-client", feature = "dist-worker")))]
     pub scheduler_url: Option<String>,
     pub cache_dir: PathBuf,
     pub toolchains: Vec<DistToolchainConfig>,
@@ -779,7 +779,7 @@ impl CachedConfig {
     }
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub mod scheduler {
     use super::HTTPUrl;
     use std::path::Path;
@@ -812,7 +812,7 @@ pub mod scheduler {
     #[derive(Debug, Serialize, Deserialize)]
     #[serde(tag = "type")]
     #[serde(deny_unknown_fields)]
-    pub enum ServerAuth {
+    pub enum WorkerAuth {
         #[serde(rename = "DANGEROUSLY_INSECURE")]
         Insecure,
         #[serde(rename = "jwt_hs256")]
@@ -826,7 +826,7 @@ pub mod scheduler {
     pub struct Config {
         pub public_addr: HTTPUrl,
         pub client_auth: ClientAuth,
-        pub server_auth: ServerAuth,
+        pub server_auth: WorkerAuth,
     }
 
     pub fn from_path(conf_path: &Path) -> Result<Option<Config>> {
@@ -834,9 +834,9 @@ pub mod scheduler {
     }
 }
 
-#[cfg(feature = "dist-server")]
-pub mod server {
-    use super::{HTTPUrl, ServerUrl};
+#[cfg(feature = "dist-worker")]
+pub mod coordinator {
+    use super::{HTTPUrl, WorkerUrl};
     use std::path::{Path, PathBuf};
 
     use crate::errors::*;
@@ -876,7 +876,7 @@ pub mod server {
     pub struct Config {
         pub builder: BuilderType,
         pub cache_dir: PathBuf,
-        pub public_addr: ServerUrl,
+        pub public_addr: WorkerUrl,
         pub scheduler_url: HTTPUrl,
         pub scheduler_auth: SchedulerAuth,
         #[serde(default = "default_toolchain_cache_size")]
@@ -884,7 +884,7 @@ pub mod server {
     }
 
     pub fn from_path(conf_path: &Path) -> Result<Option<Config>> {
-        super::try_read_config_file(conf_path).context("Failed to load server config file")
+        super::try_read_config_file(conf_path).context("Failed to load coordinator config file")
     }
 }
 
@@ -1057,13 +1057,13 @@ public = false
                 auth: DistAuth::Token {
                     token: "secrettoken".to_owned()
                 },
-                #[cfg(any(feature = "dist-client", feature = "dist-server"))]
+                #[cfg(any(feature = "dist-client", feature = "dist-worker"))]
                 scheduler_url: Some(
                     parse_http_url("http://1.2.3.4:10600")
                         .map(|url| { HTTPUrl::from_url(url) })
                         .expect("Scheduler url must be valid url str")
                 ),
-                #[cfg(not(any(feature = "dist-client", feature = "dist-server")))]
+                #[cfg(not(any(feature = "dist-client", feature = "dist-worker")))]
                 scheduler_url: Some("http://1.2.3.4:10600".to_owned()),
                 cache_dir: PathBuf::from("/home/user/.cache/cachepot-dist-client"),
                 toolchains: vec![],

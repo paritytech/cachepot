@@ -13,21 +13,21 @@
 // limitations under the License.
 #[cfg(feature = "dist-client")]
 pub use self::client::Client;
-#[cfg(feature = "dist-server")]
-pub use self::server::Server;
-#[cfg(feature = "dist-server")]
-pub use self::server::{
-    ClientAuthCheck, ClientVisibleMsg, Scheduler, ServerAuthCheck, HEARTBEAT_TIMEOUT,
+#[cfg(feature = "dist-worker")]
+pub use self::worker::Server;
+#[cfg(feature = "dist-worker")]
+pub use self::worker::{
+    CoordinatorAuthCheck, CoordinatorVisibleMsg, Scheduler, WorkerAuthCheck, HEARTBEAT_TIMEOUT,
 };
 
 mod common {
-    #[cfg(any(feature = "dist-client", feature = "dist-server"))]
+    #[cfg(any(feature = "dist-client", feature = "dist-worker"))]
     use hyperx::header;
-    #[cfg(feature = "dist-server")]
+    #[cfg(feature = "dist-worker")]
     use std::collections::HashMap;
     use std::fmt;
 
-    #[cfg(feature = "dist-server")]
+    #[cfg(feature = "dist-worker")]
     use crate::config;
     use crate::dist;
 
@@ -56,7 +56,7 @@ mod common {
         }
     }
 
-    #[cfg(any(feature = "dist-client", feature = "dist-server"))]
+    #[cfg(any(feature = "dist-client", feature = "dist-worker"))]
     pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::RequestBuilder,
     ) -> Result<T> {
@@ -99,10 +99,10 @@ mod common {
         },
     }
     impl AllocJobHttpResponse {
-        #[cfg(feature = "dist-server")]
+        #[cfg(feature = "dist-worker")]
         pub fn from_alloc_job_result(
             res: dist::AllocJobResult,
-            certs: &HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>,
+            certs: &HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>,
         ) -> Self {
             match res {
                 dist::AllocJobResult::Success {
@@ -164,7 +164,7 @@ mod common {
 }
 
 pub mod urls {
-    use crate::config::ServerUrl;
+    use crate::config::WorkerUrl;
     use crate::dist::JobId;
 
     pub fn scheduler_alloc_job(scheduler_url: &reqwest::Url) -> reqwest::Url {
@@ -174,7 +174,7 @@ pub mod urls {
     }
     pub fn scheduler_server_certificate(
         scheduler_url: &reqwest::Url,
-        server_id: ServerUrl,
+        server_id: WorkerUrl,
     ) -> reqwest::Url {
         scheduler_url
             .join(&format!(
@@ -199,29 +199,29 @@ pub mod urls {
             .expect("failed to create alloc job url")
     }
 
-    pub fn server_assign_job(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
+    pub fn server_assign_job(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
-            "https://{}/api/v1/distserver/assign_job/{}",
+            "https://{}/api/v1/distworker/assign_job/{}",
             server_id, job_id
         );
         warn!("URL {}", url);
         reqwest::Url::parse(&url).expect("failed to create assign job url")
     }
-    pub fn server_submit_toolchain(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
+    pub fn server_submit_toolchain(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
-            "https://{}/api/v1/distserver/submit_toolchain/{}",
+            "https://{}/api/v1/distworker/submit_toolchain/{}",
             server_id, job_id
         );
         reqwest::Url::parse(&url).expect("failed to create submit toolchain url")
     }
-    pub fn server_run_job(server_id: ServerUrl, job_id: JobId) -> reqwest::Url {
-        let url = format!("https://{}/api/v1/distserver/run_job/{}", server_id, job_id);
+    pub fn server_run_job(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
+        let url = format!("https://{}/api/v1/distworker/run_job/{}", server_id, job_id);
         reqwest::Url::parse(&url).expect("failed to create run job url")
     }
 }
 
-#[cfg(feature = "dist-server")]
-mod server {
+#[cfg(feature = "dist-worker")]
+mod worker {
     use crate::{config, jwt};
     use rand::{rngs::OsRng, RngCore};
     use std::collections::HashMap;
@@ -237,7 +237,7 @@ mod server {
     use super::urls;
     use crate::dist::{
         self, AssignJobResult, HeartbeatServerResult, JobId, JobState, ServerNonce, Toolchain,
-        UpdateJobStateResult,
+        UpdateJobStateResult, WorkerUrl,
     };
     use crate::errors::*;
 
@@ -342,18 +342,18 @@ mod server {
 
     // Messages that are non-sensitive and can be sent to the client
     #[derive(Debug)]
-    pub struct ClientVisibleMsg(String);
-    impl ClientVisibleMsg {
+    pub struct CoordinatorVisibleMsg(String);
+    impl CoordinatorVisibleMsg {
         pub fn from_nonsensitive(s: String) -> Self {
-            ClientVisibleMsg(s)
+            CoordinatorVisibleMsg(s)
         }
     }
 
     #[async_trait]
-    pub trait ClientAuthCheck: Send + Sync {
-        async fn check(&self, token: &str) -> StdResult<(), ClientVisibleMsg>;
+    pub trait CoordinatorAuthCheck: Send + Sync {
+        async fn check(&self, token: &str) -> StdResult<(), CoordinatorVisibleMsg>;
     }
-    pub type ServerAuthCheck = Arc<dyn Fn(&str) -> Option<config::ServerUrl> + Send + Sync>;
+    pub type WorkerAuthCheck = Arc<dyn Fn(&str) -> Option<WorkerUrl> + Send + Sync>;
 
     const JWT_KEY_LENGTH: usize = 256 / 8;
     lazy_static! {
@@ -448,7 +448,7 @@ mod server {
         assert!(ja2.verify_token(job_id2, &token2).is_err());
     }
 
-    mod distserver_api_v1 {
+    mod distworker_api_v1 {
         use thiserror::Error;
 
         pub use filters::api;
@@ -482,8 +482,8 @@ mod server {
             use super::{handlers, Error};
             use crate::dist::{
                 self,
-                http::server::{ClientVisibleMsg, ErrJson},
-                JobAuthorizer, JobId, ServerIncoming,
+                http::worker::{CoordinatorVisibleMsg, ErrJson},
+                CoordinatorIncoming, JobAuthorizer, JobId,
             };
 
             fn bearer_http_auth(auth_header: &HeaderValue) -> Result<String, Error> {
@@ -527,15 +527,15 @@ mod server {
             }
 
             fn with_requester(
-                requester: Arc<dyn dist::ServerOutgoing>,
-            ) -> impl Filter<Extract = (Arc<dyn dist::ServerOutgoing>,), Error = Infallible> + Clone
+                requester: Arc<dyn dist::CoordinatorOutgoing>,
+            ) -> impl Filter<Extract = (Arc<dyn dist::CoordinatorOutgoing>,), Error = Infallible> + Clone
             {
                 warp::any().map(move || requester.clone())
             }
 
             fn with_server_incoming_handler(
-                handler: Arc<dyn ServerIncoming>,
-            ) -> impl Filter<Extract = (Arc<dyn ServerIncoming>,), Error = Infallible> + Clone
+                handler: Arc<dyn CoordinatorIncoming>,
+            ) -> impl Filter<Extract = (Arc<dyn CoordinatorIncoming>,), Error = Infallible> + Clone
             {
                 warp::any().map(move || handler.clone())
             }
@@ -559,16 +559,16 @@ mod server {
                 }
             }
 
-            // POST /api/v1/distserver/assign_job/{job_id: JobId}
+            // POST /api/v1/distworker/assign_job/{job_id: JobId}
             fn assign_job(
                 request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn dist::JobAuthorizer>,
-                handler: Arc<dyn dist::ServerIncoming>,
+                handler: Arc<dyn dist::CoordinatorIncoming>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 let with_request_id =
                     warp::any().map(move || request_counter.fetch_add(1, atomic::Ordering::SeqCst));
 
-                warp::path!("api" / "v1" / "distserver" / "assign_job" / JobId)
+                warp::path!("api" / "v1" / "distworker" / "assign_job" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
                     .and(warp::header::value(AUTHORIZATION.as_str()))
@@ -581,14 +581,14 @@ mod server {
                     .and_then(prepare_response)
             }
 
-            // POST /api/v1/distserver/submit_toolchain/{job_id: JobId}
+            // POST /api/v1/distworker/submit_toolchain/{job_id: JobId}
             fn submit_toolchain(
                 _request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                handler: Arc<dyn ServerIncoming>,
-                requester: Arc<dyn dist::ServerOutgoing>,
+                handler: Arc<dyn CoordinatorIncoming>,
+                requester: Arc<dyn dist::CoordinatorOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-                warp::path!("api" / "v1" / "distserver" / "submit_toolchain" / JobId)
+                warp::path!("api" / "v1" / "distworker" / "submit_toolchain" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
                     .and(warp::header::value(AUTHORIZATION.as_str()))
@@ -601,14 +601,14 @@ mod server {
                     .and_then(prepare_response)
             }
 
-            // POST /api/v1/distserver/run_job/{job_id: JobId}
+            // POST /api/v1/distworker/run_job/{job_id: JobId}
             fn run_job(
                 _request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                handler: Arc<dyn ServerIncoming>,
-                requester: Arc<dyn dist::ServerOutgoing>,
+                handler: Arc<dyn CoordinatorIncoming>,
+                requester: Arc<dyn dist::CoordinatorOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-                warp::path!("api" / "v1" / "distserver" / "run_job" / JobId)
+                warp::path!("api" / "v1" / "distworker" / "run_job" / JobId)
                     .and(warp::post())
                     .and(with_job_authorizer(job_authorizer))
                     .and(warp::header::value(AUTHORIZATION.as_str()))
@@ -623,8 +623,8 @@ mod server {
 
             pub fn api(
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                server_incoming_handler: Arc<dyn ServerIncoming>,
-                requester: Arc<dyn dist::ServerOutgoing>,
+                server_incoming_handler: Arc<dyn CoordinatorIncoming>,
+                requester: Arc<dyn dist::CoordinatorOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
                 let request_count = Arc::new(atomic::AtomicUsize::new(0));
 
@@ -648,7 +648,10 @@ mod server {
                 .recover(handle_rejection)
             }
 
-            fn make_401_with_body(short_err: &str, body: Option<ClientVisibleMsg>) -> Response {
+            fn make_401_with_body(
+                short_err: &str,
+                body: Option<CoordinatorVisibleMsg>,
+            ) -> Response {
                 let body = reply::with_status(
                     body.map(|b| b.0).unwrap_or_default(),
                     StatusCode::UNAUTHORIZED,
@@ -688,7 +691,7 @@ mod server {
 
                         Ok(make_401_with_body(
                             "invalid_jwt",
-                            Some(ClientVisibleMsg(json.into_data())),
+                            Some(CoordinatorVisibleMsg(json.into_data())),
                         )
                         .into_response())
                     } else {
@@ -704,7 +707,7 @@ mod server {
                             let json = ErrJson::from_err(&*err);
                             Ok(make_401_with_body(
                                 "invalid_jwt",
-                                Some(ClientVisibleMsg(json.into_data())),
+                                Some(CoordinatorVisibleMsg(json.into_data())),
                             )
                             .into_response())
                         }
@@ -742,7 +745,7 @@ mod server {
             use crate::dist::{
                 AssignJobResult, InputsReader, RunJobResult, SubmitToolchainResult, ToolchainReader,
             };
-            use crate::dist::{ServerIncoming, ServerOutgoing, Toolchain};
+            use crate::dist::{CoordinatorIncoming, CoordinatorOutgoing, Toolchain};
             use byteorder::{BigEndian, ReadBytesExt};
             use flate2::read::ZlibDecoder as ZlibReadDecoder;
             use std::sync::Arc;
@@ -751,7 +754,7 @@ mod server {
             pub async fn assign_job(
                 job_id: JobId,
                 toolchain: Toolchain,
-                handler: Arc<dyn ServerIncoming>,
+                handler: Arc<dyn CoordinatorIncoming>,
                 _req_id: usize,
             ) -> Result<AssignJobResult, Rejection> {
                 let res = handler
@@ -764,8 +767,8 @@ mod server {
 
             pub async fn submit_toolchain(
                 job_id: JobId,
-                handler: Arc<dyn ServerIncoming>,
-                requester: Arc<dyn ServerOutgoing>,
+                handler: Arc<dyn CoordinatorIncoming>,
+                requester: Arc<dyn CoordinatorOutgoing>,
                 body: bytes::Bytes,
             ) -> Result<SubmitToolchainResult, Rejection> {
                 let toolchain_rdr = ToolchainReader(Box::new(body.as_ref()));
@@ -779,8 +782,8 @@ mod server {
 
             pub async fn run_job(
                 job_id: JobId,
-                handler: Arc<dyn ServerIncoming>,
-                requester: Arc<dyn ServerOutgoing>,
+                handler: Arc<dyn CoordinatorIncoming>,
+                requester: Arc<dyn CoordinatorOutgoing>,
                 body: bytes::Bytes,
             ) -> Result<RunJobResult, Rejection> {
                 use std::io::Read;
@@ -856,7 +859,8 @@ mod server {
 
         pub(super) mod filters {
             use super::super::{
-                ClientAuthCheck, ClientVisibleMsg, ErrJson, SchedulerRequester, ServerAuthCheck,
+                CoordinatorAuthCheck, CoordinatorVisibleMsg, ErrJson, SchedulerRequester,
+                WorkerAuthCheck,
             };
             use super::{handlers, Error};
             use crate::config;
@@ -878,7 +882,7 @@ mod server {
                 Filter, Rejection, Reply,
             };
 
-            fn make_401_with_body(short_err: &str, body: ClientVisibleMsg) -> Response {
+            fn make_401_with_body(short_err: &str, body: CoordinatorVisibleMsg) -> Response {
                 let body = reply::with_status(body.0, StatusCode::UNAUTHORIZED);
                 reply::with_header(
                     body,
@@ -914,10 +918,11 @@ mod server {
                         let err: Box<dyn std::error::Error> = e.into();
                         let json = ErrJson::from_err(&*err);
 
-                        Ok(
-                            make_401_with_body("invalid_jwt", ClientVisibleMsg(json.into_data()))
-                                .into_response(),
+                        Ok(make_401_with_body(
+                            "invalid_jwt",
+                            CoordinatorVisibleMsg(json.into_data()),
                         )
+                        .into_response())
                     } else {
                         Ok(
                             warp::reply::with_status(warp::reply(), StatusCode::NOT_FOUND)
@@ -935,7 +940,7 @@ mod server {
                             let json = ErrJson::from_err(&*err);
                             Ok(make_401_with_body(
                                 "invalid_jwt",
-                                ClientVisibleMsg(json.into_data()),
+                                CoordinatorVisibleMsg(json.into_data()),
                             )
                             .into_response())
                         }
@@ -959,10 +964,10 @@ mod server {
 
             pub fn api(
                 requester: Arc<SchedulerRequester>,
-                auth: Arc<dyn ClientAuthCheck>,
+                auth: Arc<dyn CoordinatorAuthCheck>,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
-                check_server_auth: ServerAuthCheck,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
+                check_worker_auth: WorkerAuthCheck,
             ) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
                 alloc_job(
                     requester.clone(),
@@ -972,12 +977,12 @@ mod server {
                 )
                 .or(server_certificate(certificates.clone()))
                 .or(heartbeat_server(
-                    check_server_auth.clone(),
+                    check_worker_auth.clone(),
                     s.clone(),
                     certificates,
                     requester,
                 ))
-                .or(job_state(check_server_auth, s.clone()))
+                .or(job_state(check_worker_auth, s.clone()))
                 .or(status(s))
                 .recover(handle_rejection)
             }
@@ -985,9 +990,9 @@ mod server {
             // POST /api/v1/scheduler/alloc_job
             fn alloc_job(
                 requester: Arc<SchedulerRequester>,
-                auth: Arc<dyn ClientAuthCheck>,
+                auth: Arc<dyn CoordinatorAuthCheck>,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "alloc_job")
                     .and(warp::post())
@@ -1006,10 +1011,10 @@ mod server {
 
             // GET /api/v1/scheduler/server_certificate/{server_id: ServerId})
             fn server_certificate(
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-                use config::ServerUrl;
-                warp::path!("api" / "v1" / "scheduler" / "server_certificate" / ServerUrl)
+                use config::WorkerUrl;
+                warp::path!("api" / "v1" / "scheduler" / "server_certificate" / WorkerUrl)
                     .and(warp::get())
                     .and(with_certificates(certificates))
                     .and_then(handlers::server_certificate)
@@ -1019,14 +1024,14 @@ mod server {
 
             // POST /api/v1/scheduler/heartbeat_server
             fn heartbeat_server(
-                check_server_auth: ServerAuthCheck,
+                check_worker_auth: WorkerAuthCheck,
                 s: Arc<dyn dist::SchedulerIncoming>,
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "heartbeat_server")
                     .and(warp::post())
-                    .and(with_server_auth(check_server_auth))
+                    .and(with_server_auth(check_worker_auth))
                     .and(warp::header::headers_cloned())
                     .and(warp::addr::remote())
                     .and_then(auth_server)
@@ -1041,13 +1046,13 @@ mod server {
 
             // POST /api/v1/scheduler/job_state/{job_id: JobId}
             fn job_state(
-                check_server_auth: ServerAuthCheck,
+                check_worker_auth: WorkerAuthCheck,
                 s: Arc<dyn dist::SchedulerIncoming>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "scheduler" / "job_state" / JobId)
                     .and(warp::post())
                     .and(
-                        with_server_auth(check_server_auth)
+                        with_server_auth(check_worker_auth)
                             .and(warp::header::headers_cloned())
                             .and(warp::addr::remote())
                             .and_then(auth_server),
@@ -1121,23 +1126,23 @@ mod server {
             }
 
             fn with_certificates(
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<
-                Extract = (Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,),
+                Extract = (Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,),
                 Error = Infallible,
             > + Clone {
                 warp::any().map(move || certificates.clone())
             }
 
             fn with_server_auth(
-                check_server_auth: ServerAuthCheck,
-            ) -> impl Filter<Extract = (ServerAuthCheck,), Error = Infallible> + Clone {
-                warp::any().map(move || check_server_auth.clone())
+                check_worker_auth: WorkerAuthCheck,
+            ) -> impl Filter<Extract = (WorkerAuthCheck,), Error = Infallible> + Clone {
+                warp::any().map(move || check_worker_auth.clone())
             }
 
             fn with_client_authorizer(
-                client_authorizer: Arc<dyn ClientAuthCheck>,
-            ) -> impl Filter<Extract = (Arc<dyn ClientAuthCheck>,), Error = Infallible> + Clone
+                client_authorizer: Arc<dyn CoordinatorAuthCheck>,
+            ) -> impl Filter<Extract = (Arc<dyn CoordinatorAuthCheck>,), Error = Infallible> + Clone
             {
                 warp::any().map(move || client_authorizer.clone())
             }
@@ -1162,12 +1167,12 @@ mod server {
             }
 
             async fn authorize(
-                check_client_auth: Arc<dyn ClientAuthCheck>,
+                checker_coordinator_auth: Arc<dyn CoordinatorAuthCheck>,
                 auth_header: HeaderValue,
             ) -> Result<(), Rejection> {
                 let bearer_auth = bearer_http_auth(&auth_header)?;
 
-                check_client_auth
+                checker_coordinator_auth
                     .check(&bearer_auth)
                     .await
                     .map_err(|_| Error::BearerAuthFailed)?;
@@ -1176,15 +1181,15 @@ mod server {
             }
 
             async fn auth_server(
-                check_server_auth: ServerAuthCheck,
+                check_worker_auth: WorkerAuthCheck,
                 headers: HeaderMap<HeaderValue>,
                 remote: Option<SocketAddr>,
-            ) -> Result<config::ServerUrl, Rejection> {
+            ) -> Result<config::WorkerUrl, Rejection> {
                 let auth_header = headers
                     .get(AUTHORIZATION.as_str())
                     .ok_or(Error::NoAuthorizationHeader)?;
 
-                match check_server_auth(&bearer_http_auth(auth_header)?) {
+                match check_worker_auth(&bearer_http_auth(auth_header)?) {
                     Some(server_id) => {
                         let origin_ip = if let Some(header_val) = headers.get("X-Real-IP") {
                             trace!("X-Real-IP: {:?}", header_val);
@@ -1254,7 +1259,7 @@ mod server {
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 toolchain: dist::Toolchain,
                 requester: Arc<SchedulerRequester>,
-                certs: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                certs: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> Result<AllocJobHttpResponse, Rejection> {
                 let alloc_job_res = handler
                     .handle_alloc_job(requester.as_ref(), toolchain)
@@ -1271,8 +1276,8 @@ mod server {
             }
 
             pub async fn server_certificate(
-                server_id: config::ServerUrl,
-                certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                server_id: config::WorkerUrl,
+                certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> Result<ServerCertificateHttpResponse, Rejection> {
                 let certs = certificates.lock().await;
 
@@ -1286,10 +1291,10 @@ mod server {
             }
 
             pub async fn heartbeat_server(
-                server_id: config::ServerUrl,
+                server_id: config::WorkerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 heartbeat_server: HeartbeatServerHttpRequest,
-                server_certificates: Arc<Mutex<HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>>>,
+                server_certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
                 requester: Arc<SchedulerRequester>,
             ) -> Result<HeartbeatServerResult, Rejection> {
                 let HeartbeatServerHttpRequest {
@@ -1327,7 +1332,7 @@ mod server {
 
             pub async fn job_state(
                 job_id: JobId,
-                server_id: config::ServerUrl,
+                server_id: config::WorkerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 job_state: JobState,
             ) -> Result<UpdateJobStateResult, Rejection> {
@@ -1348,8 +1353,8 @@ mod server {
 
             async fn maybe_update_certs(
                 client: &mut reqwest::Client,
-                certs: &mut HashMap<config::ServerUrl, (Vec<u8>, Vec<u8>)>,
-                server_id: config::ServerUrl,
+                certs: &mut HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>,
+                server_id: config::WorkerUrl,
                 cert_digest: Vec<u8>,
                 cert_pem: Vec<u8>,
             ) -> Result<(), Error> {
@@ -1382,23 +1387,23 @@ mod server {
         public_addr: reqwest::Url,
         handler: S,
         // Is this client permitted to use the scheduler?
-        check_client_auth: Box<dyn ClientAuthCheck>,
+        checker_coordinator_auth: Box<dyn CoordinatorAuthCheck>,
         // Do we believe the server is who they appear to be?
-        check_server_auth: ServerAuthCheck,
+        check_worker_auth: WorkerAuthCheck,
     }
 
     impl<S: dist::SchedulerIncoming + 'static> Scheduler<S> {
         pub fn new(
             public_addr: reqwest::Url,
             handler: S,
-            check_client_auth: Box<dyn ClientAuthCheck>,
-            check_server_auth: ServerAuthCheck,
+            checker_coordinator_auth: Box<dyn CoordinatorAuthCheck>,
+            check_worker_auth: WorkerAuthCheck,
         ) -> Self {
             Self {
                 public_addr,
                 handler,
-                check_client_auth,
-                check_server_auth,
+                checker_coordinator_auth,
+                check_worker_auth,
             }
         }
 
@@ -1406,8 +1411,8 @@ mod server {
             let Self {
                 public_addr,
                 handler,
-                check_client_auth,
-                check_server_auth,
+                checker_coordinator_auth,
+                check_worker_auth,
             } = self;
 
             let client =
@@ -1419,15 +1424,15 @@ mod server {
                 client: Mutex::new(client),
             });
 
-            let check_client_auth = Arc::from(check_client_auth);
+            let checker_coordinator_auth = Arc::from(checker_coordinator_auth);
             let handler = Arc::from(handler);
             let server_certificates = Arc::new(Mutex::new(HashMap::new()));
             let api = scheduler_api_v1::api(
                 requester,
-                check_client_auth,
+                checker_coordinator_auth,
                 handler,
                 server_certificates,
-                check_server_auth,
+                check_worker_auth,
             );
             info!("Scheduler listening for clients on {}", public_addr);
 
@@ -1448,7 +1453,7 @@ mod server {
     impl dist::SchedulerOutgoing for SchedulerRequester {
         async fn do_assign_job(
             &self,
-            server_id: config::ServerUrl,
+            server_id: config::WorkerUrl,
             job_id: JobId,
             tc: Toolchain,
             auth: String,
@@ -1476,7 +1481,7 @@ mod server {
         handler: S,
     }
 
-    impl<S: dist::ServerIncoming + 'static> Server<S> {
+    impl<S: dist::CoordinatorIncoming + 'static> Server<S> {
         pub fn new(
             public_addr: reqwest::Url,
             scheduler_url: reqwest::Url,
@@ -1532,7 +1537,7 @@ mod server {
                 scheduler_auth: scheduler_auth.clone(),
             });
 
-            let api = distserver_api_v1::api(job_authorizer, handler, requester);
+            let api = distworker_api_v1::api(job_authorizer, handler, requester);
 
             tokio::spawn(async move {
                 use tokio::time;
@@ -1583,7 +1588,7 @@ mod server {
     }
 
     #[async_trait]
-    impl dist::ServerOutgoing for ServerRequester {
+    impl dist::CoordinatorOutgoing for ServerRequester {
         async fn do_update_job_state(
             &self,
             job_id: JobId,
@@ -1864,7 +1869,7 @@ mod client {
 
 #[cfg(all(test, feature = "vs_openssl"))]
 mod tests {
-    use crate::dist::http::server::create_https_cert_and_privkey;
+    use crate::dist::http::worker::create_https_cert_and_privkey;
     use crate::dist::SocketAddr;
     use anyhow::{Context, Result};
 

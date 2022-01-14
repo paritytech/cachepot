@@ -1,7 +1,7 @@
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
-use cachepot::config::{HTTPUrl, ServerUrl};
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+use cachepot::config::{HTTPUrl, WorkerUrl};
+use cachepot::coordinator::ServerInfo;
 use cachepot::dist::{self, SchedulerStatusResult};
-use cachepot::server::ServerInfo;
 use cachepot::util::fs;
 use std::env;
 use std::io::Write;
@@ -16,7 +16,7 @@ use std::time::Duration;
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use serde::Serialize;
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ const DIST_DOCKERFILE: &str = include_str!("Dockerfile.cachepot-dist");
 const DIST_IMAGE_BWRAP_PATH: &str = "/bwrap";
 const MAX_STARTUP_WAIT: Duration = Duration::from_secs(5);
 
-const DIST_SERVER_TOKEN: &str = "THIS IS THE TEST TOKEN";
+const DIST_WORKER_TOKEN: &str = "THIS IS THE TEST TOKEN";
 
 const CONFIGS_CONTAINER_PATH: &str = "/cachepot-bits";
 const BUILD_DIR_CONTAINER_PATH: &str = "/cachepot-bits/build-dir";
@@ -38,9 +38,9 @@ const TC_CACHE_SIZE: u64 = 1024 * 1024 * 1024; // 1 gig
 pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     // Don't run this with run() because on Windows `wait_with_output`
     // will hang because the internal server process is not detached.
-    trace!("cachepot --start-server");
+    trace!("cachepot --start-coordinator");
     let _status = cachepot_command()
-        .arg("--start-server")
+        .arg("--start-coordinator")
         .env("CACHEPOT_CONF", cfg_path)
         .env("CACHEPOT_CACHED_CONF", cached_cfg_path)
         .status()
@@ -48,10 +48,10 @@ pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
         .success();
 }
 pub fn stop_local_daemon() {
-    trace!("cachepot --stop-server");
+    trace!("cachepot --stop-coordinator");
     drop(
         cachepot_command()
-            .arg("--stop-server")
+            .arg("--stop-coordinator")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status(),
@@ -107,7 +107,7 @@ pub fn cachepot_command() -> Command {
     cmd
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub fn cachepot_dist_path() -> PathBuf {
     assert_cmd::cargo::cargo_bin("cachepot-dist")
 }
@@ -141,35 +141,35 @@ pub fn cachepot_client_cfg(tmpdir: &Path) -> cachepot::config::FileConfig {
         },
     }
 }
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 fn cachepot_scheduler_cfg() -> cachepot::config::scheduler::Config {
     cachepot::config::scheduler::Config {
         public_addr: HTTPUrl::from_str(&format!("http://0.0.0.0:{}", SCHEDULER_PORT)).unwrap(),
         client_auth: cachepot::config::scheduler::ClientAuth::Insecure,
-        server_auth: cachepot::config::scheduler::ServerAuth::Token {
-            token: DIST_SERVER_TOKEN.to_owned(),
+        server_auth: cachepot::config::scheduler::WorkerAuth::Token {
+            token: DIST_WORKER_TOKEN.to_owned(),
         },
     }
 }
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 fn cachepot_server_cfg(
     tmpdir: &Path,
     scheduler_url: HTTPUrl,
     server_ip: IpAddr,
-) -> cachepot::config::server::Config {
+) -> cachepot::config::worker::Config {
     let relpath = "server-cache";
     fs::create_dir(tmpdir.join(relpath)).unwrap();
 
-    cachepot::config::server::Config {
-        builder: cachepot::config::server::BuilderType::Overlay {
+    cachepot::config::worker::Config {
+        builder: cachepot::config::worker::BuilderType::Overlay {
             build_dir: BUILD_DIR_CONTAINER_PATH.into(),
             bwrap_path: DIST_IMAGE_BWRAP_PATH.into(),
         },
         cache_dir: Path::new(CONFIGS_CONTAINER_PATH).join(relpath),
-        public_addr: ServerUrl::from_str(&format!("{}:{}", server_ip, SERVER_PORT)).unwrap(),
+        public_addr: WorkerUrl::from_str(&format!("{}:{}", server_ip, SERVER_PORT)).unwrap(),
         scheduler_url,
-        scheduler_auth: cachepot::config::server::SchedulerAuth::Token {
-            token: DIST_SERVER_TOKEN.to_owned(),
+        scheduler_auth: cachepot::config::worker::SchedulerAuth::Token {
+            token: DIST_WORKER_TOKEN.to_owned(),
         },
         toolchain_cache_size: TC_CACHE_SIZE,
     }
@@ -177,12 +177,12 @@ fn cachepot_server_cfg(
 
 // TODO: this is copied from the cachepot-dist binary - it's not clear where would be a better place to put the
 // code so that it can be included here
-#[cfg(feature = "dist-server")]
-fn create_server_token(server_id: ServerUrl, auth_token: &str) -> String {
+#[cfg(feature = "dist-worker")]
+fn create_server_token(server_id: WorkerUrl, auth_token: &str) -> String {
     format!("{} {}", server_id, auth_token)
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub enum ServerHandle {
     Container {
         cid: String,
@@ -194,7 +194,7 @@ pub enum ServerHandle {
     },
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub struct DistSystem {
     cachepot_dist: PathBuf,
     tmpdir: PathBuf,
@@ -205,7 +205,7 @@ pub struct DistSystem {
     client: reqwest::Client,
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 impl DistSystem {
     pub fn new(cachepot_dist: &Path, tmpdir: &Path) -> Self {
         // Make sure the docker image is available, building it if necessary
@@ -390,7 +390,7 @@ impl DistSystem {
         handle
     }
 
-    pub async fn add_custom_server<S: dist::ServerIncoming + 'static>(
+    pub async fn add_custom_server<S: dist::CoordinatorIncoming + 'static>(
         &mut self,
         handler: S,
     ) -> ServerHandle {
@@ -399,7 +399,7 @@ impl DistSystem {
             let listener = tokio::net::TcpListener::bind(SocketAddr::from((ip, 0)))
                 .await
                 .unwrap();
-            ServerUrl::from_str(&format!("{}", listener.local_addr().unwrap())).unwrap()
+            WorkerUrl::from_str(&format!("{}", listener.local_addr().unwrap())).unwrap()
         };
         let token = create_server_token(server_addr.clone(), DIST_SERVER_TOKEN);
         let server = dist::http::Server::new(
@@ -522,7 +522,7 @@ impl DistSystem {
 }
 
 // If you want containers to hang around (e.g. for debugging), commend out the "rm -f" lines
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 impl Drop for DistSystem {
     fn drop(&mut self) {
         let mut did_err = false;
@@ -635,7 +635,7 @@ fn check_output(output: &Output) {
     }
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
     let tls = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
@@ -649,7 +649,7 @@ fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
         .use_preconfigured_tls(tls)
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 async fn wait_for_http(
     client: &reqwest::Client,
     url: HTTPUrl,
