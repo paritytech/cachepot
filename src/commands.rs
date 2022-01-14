@@ -233,7 +233,7 @@ fn run_coordinator_process() -> Result<CoordinatorStartup> {
         let socket = incoming.next().await;
         let socket = socket.unwrap(); // incoming() never returns None
 
-        read_server_startup_status(socket?).await
+        read_coordinator_startup_status(socket?).await
     };
 
     let timeout = Duration::from_millis(COORDINATOR_STARTUP_TIMEOUT_MS.into());
