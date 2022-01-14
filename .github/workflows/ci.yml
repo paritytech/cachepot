@@ -164,6 +164,7 @@ jobs:
           CACHEPOT_LOG: cachepot=trace
           CACHEPOT_ERROR_LOG: ${{ github.workspace }}/cachepot.err.log
       - name: Verify that the local distributed cachepot stack is running
+        run: cachepot --dist-status
         run: test $(cachepot --dist-status | jq ".SchedulerStatus[1].num_servers") -gt 0
 
       - name: Run a smoke check build
