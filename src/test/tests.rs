@@ -280,7 +280,7 @@ fn test_server_compile() {
 // test fails intermittently on macos:
 // https://github.com/mozilla/sccache/issues/234
 #[cfg(not(target_os = "macos"))]
-fn test_server_port_in_use() {
+fn test_coordinator_port_in_use() {
     // Bind an arbitrary free port.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let cachepot = find_cachepot_binary();
@@ -299,6 +299,6 @@ fn test_server_port_in_use() {
         "=====stdout=====\n{}\n=====stderr=====\n{}\n================",
         stdout, stderr,
     );
-    const MSG: &str = "Server startup failed:";
+    const MSG: &str = "Coordinator startup failed:";
     assert!(stderr.contains(MSG), "stderr did not contain '{}':", MSG);
 }
