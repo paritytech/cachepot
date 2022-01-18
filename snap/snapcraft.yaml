@@ -17,7 +17,7 @@ apps:
     cachepot:
         command: bin/cachepot.wrapper
 
-    cachepot-server:
+    cachepot-coordinator:
         environment:
             CACHEPOT_START_SERVER: 1
             CACHEPOT_NO_DAEMON: 1

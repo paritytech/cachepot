@@ -23,10 +23,10 @@ Distributed cachepot consists of three parts:
   remote machines
 - the scheduler (`cachepot-dist` binary), responsible for deciding where
   a compilation job should run
-- the server (`cachepot-dist` binary), responsible for actually executing
+- the worker (`cachepot-dist` binary), responsible for actually executing
   a build
 
-All servers are required to be a 64-bit Linux install. Clients may request
+All workers are required to be a 64-bit Linux install. Clients may request
 compilation from Linux, Windows or macOS. Linux compilations will attempt to
 automatically package the compiler in use, while Windows and macOS users will
 need to specify a toolchain for cross-compilation ahead of time.
@@ -35,49 +35,49 @@ need to specify a toolchain for cross-compilation ahead of time.
 
 The HTTP implementation of cachepot has the following API, where all HTTP body content is encoded using [`bincode`](http://docs.rs/bincode):
 
-- scheduler
+- `scheduler`
   - `POST /api/v1/scheduler/alloc_job`
-    - Called by a client to submit a compilation request.
+    - Called by the coordinator to submit a compilation request.
     - Returns information on where the job is allocated it should run.
-  - `GET /api/v1/scheduler/server_certificate`
-    - Called by a client to retrieve the (dynamically created) HTTPS
-       certificate for a server, for use in communication with that server.
-    - Returns a digest and PEM for the temporary server HTTPS certificate.
-  - `POST /api/v1/scheduler/heartbeat_server`
-    - Called (repeatedly) by servers to register as available for jobs.
+  - `GET /api/v1/scheduler/worker_certificate`
+    - Called by the coordinator to retrieve the (dynamically created) HTTPS
+       certificate for a worker, for use in communication with that worker.
+    - Returns a digest and PEM for the temporary worker HTTPS certificate.
+  - `POST /api/v1/scheduler/heartbeat_worker`
+    - Called (repeatedly) by workers to register as available for jobs.
   - `POST /api/v1/scheduler/job_state`
-    - Called by servers to inform the scheduler of the state of the job.
+    - Called by workers to inform the scheduler of the state of the job.
   - `GET /api/v1/scheduler/status`
     - Returns information about the scheduler.
-- `server`
-  - `POST /api/v1/distserver/assign_job`
-    - Called by the scheduler to inform of a new job being assigned to this server.
-    - Returns whether the toolchain is already on the server or needs submitting.
-  - `POST /api/v1/distserver/submit_toolchain`
-    - Called by the client to submit a toolchain.
-  - `POST /api/v1/distserver/run_job`
-    - Called by the client to run a job.
+- `worker`
+  - `POST /api/v1/distworker/assign_job`
+    - Called by the scheduler to inform of a new job being assigned to this worker.
+    - Returns whether the toolchain is already on the worker or needs submitting.
+  - `POST /api/v1/distworker/submit_toolchain`
+    - Called by the coordinator to submit a toolchain.
+  - `POST /api/v1/distworker/run_job`
+    - Called by the coordinator to run a job.
     - Returns the compilation stdout along with files created.
 
 There are three axes of security in this setup:
 
-1. Can the scheduler trust the servers?
-2. Is the client permitted to submit and run jobs?
+1. Can the scheduler trust the workers?
+2. Is the coordinator permitted to submit and run jobs?
 3. Can third parties see and/or modify traffic?
 
-### Server Trust
+### Worker Trust
 
-If a server is malicious, they can return malicious compilation output to a user.
-To protect against this, servers must be authenticated to the scheduler. You have three
-means for doing this, and the scheduler and all servers must use the same mechanism.
+If a worker is malicious, they can return malicious compilation output to a user.
+To protect against this, workers must be authenticated to the scheduler. You have three
+means for doing this, and the scheduler and all workers must use the same mechanism.
 
-Once a server has registered itself using the selected authentication, the scheduler
-will trust the registered server address and use it for builds.
+Once a worker has registered itself using the selected authentication, the scheduler
+will trust the registered worker address and use it for builds.
 
 #### JWT HS256 (preferred)
 
-This method uses secret key to create a per-IP-and-port token for each server.
-Acquiring a token will only allow participation as a server if the attacker can
+This method uses secret key to create a per-IP-and-port token for each worker.
+Acquiring a token will only allow participation as a worker if the attacker can
 additionally impersonate the IP and port the token was generated for.
 
 You *must* keep the secret key safe.
@@ -89,28 +89,28 @@ use your OS random number generator) and put it in your scheduler config file as
 follows:
 
 ```toml
-server_auth = { type = "jwt_hs256", secret_key = "YOUR_KEY_HERE" }
+worker_auth = { type = "jwt_hs256", secret_key = "YOUR_KEY_HERE" }
 ```
 
-Now generate a token for the server, giving the IP and port the scheduler and clients can
-connect to the server on (address `192.168.1.10:10501` here):
+Now generate a token for the worker, giving the IP and port the scheduler and coordinator can
+connect to the worker on (address `192.168.1.10:10501` here):
 
 ```sh
-cachepot-dist auth generate-jwt-hs256-server-token \
+cachepot-dist auth generate-jwt-hs256-worker-token \
     --secret-key YOUR_KEY_HERE \
-    --server 192.168.1.10:10501
+    --worker 192.168.1.10:10501
 ```
 
 *or:*
 
 ```sh
-cachepot-dist auth generate-jwt-hs256-server-token \
+cachepot-dist auth generate-jwt-hs256-worker-token \
     --config /path/to/scheduler-config.toml \
-    --server 192.168.1.10:10501
+    --worker 192.168.1.10:10501
 ```
 
 This will output a token (you can examine it with https://jwt.io if you're
-curious) that you should add to your server config file as follows:
+curious) that you should add to your worker config file as follows:
 
 ```toml
 scheduler_auth = { type = "jwt_token", token = "YOUR_TOKEN_HERE" }
@@ -120,20 +120,20 @@ Done!
 
 #### Token
 
-This method simply shares a token between the scheduler and all servers. A token
-leak from anywhere allows any attacker to participate as a server.
+This method simply shares a token between the scheduler and all workers. A token
+leak from anywhere allows any attacker to participate as a worker.
 
 *To use it*:
 
-Choose a 'secure token' you can share between your scheduler and all servers.
+Choose a 'secure token' you can share between your scheduler and all workers.
 
 Put the following in your scheduler config file:
 
 ```toml
-server_auth = { type = "token", token = "YOUR_TOKEN_HERE" }
+worker_auth = { type = "token", token = "YOUR_TOKEN_HERE" }
 ```
 
-Put the following in your server config file:
+Put the following in your worker config file:
 
 ```toml
 scheduler_auth = { type = "token", token = "YOUR_TOKEN_HERE" }
@@ -153,10 +153,10 @@ provides no security at all.
 Put the following in your scheduler config file:
 
 ```toml
-server_auth = { type = "DANGEROUSLY_INSECURE" }
+worker_auth = { type = "DANGEROUSLY_INSECURE" }
 ```
 
-Put the following in your server config file:
+Put the following in your worker config file:
 
 ```toml
 scheduler_auth = { type = "DANGEROUSLY_INSECURE" }
@@ -164,25 +164,25 @@ scheduler_auth = { type = "DANGEROUSLY_INSECURE" }
 
 Done!
 
-### Client Trust
+### Coordinator Trust
 
-If a client is malicious, they can cause a DoS of distributed cachepot servers or
+If a client is malicious, they can cause a DoS of distributed cachepot workers or
 explore ways to escape the build sandbox. To protect against this, clients must
 be authenticated.
 
 Each client will use an authentication token for the initial job allocation request
 to the scheduler. A successful allocation will return a job token that is used
-to authorise requests to the appropriate server for that specific job.
+to authorise requests to the appropriate worker for that specific job.
 
-This job token is a JWT HS256 token of the job id, signed with a server key.
-The key for each server is randomly generated on server startup and given to
-the scheduler during registration. This means that the server can verify users
-without either a) adding client authentication to every server or b) needing
-secret transfer between scheduler and server on every job allocation.
+This job token is a JWT HS256 token of the job id, signed with a worker key.
+The key for each worker is randomly generated on worker startup and given to
+the scheduler during registration. This means that the worker can verify users
+without either a) adding coordinator authentication to every worker or b) needing
+secret transfer between scheduler and worker on every job allocation.
 
 #### OAuth2
 
-This is a group of similar methods for achieving the same thing - the client
+This is a group of similar methods for achieving the same thing - the coordinator
 retrieves a token from an OAuth2 service, and then submits it to the scheduler
 which has a few different options for performing validation on that token.
 
@@ -246,7 +246,7 @@ auth = { type = "token", token = "YOUR_TOKEN_HERE" }
 
 Done!
 
-#### Insecure (bad idea)
+#### Insecure (bad idea, again)
 
 *This route is not recommended*
 
@@ -268,27 +268,27 @@ Done!
 
 ### Eavesdropping and Tampering Protection
 
-If third parties can see traffic to the servers, source code can be leaked. If third
-parties can modify traffic to and from the servers or the scheduler, they can cause
+If third parties can see traffic to the workers, source code can be leaked. If third
+parties can modify traffic to and from the workers or the scheduler, they can cause
 the client to receive malicious compiled objects.
 
 Securing communication with the scheduler is the responsibility of the cachepot cluster
-administrator - it is recommended to put a webserver with a HTTPS certificate in front
+administrator - it is recommended to put a webworker with a HTTPS certificate in front
 of the scheduler and instruct clients to configure their `scheduler_url` with the
-appropriate `https://` address. The scheduler will verify the server's IP in this
-configuration by inspecting the `X-Real-IP` header's value, if present. The webserver
+appropriate `https://` address. The scheduler will verify the worker's IP in this
+configuration by inspecting the `X-Real-IP` header's value, if present. The webworker
 used in this case should be configured to set this header to the appropriate value.
 
-Securing communication with the server is performed automatically - HTTPS certificates
-are generated dynamically on server startup and communicated to the scheduler during
+Securing communication with the worker is performed automatically - HTTPS certificates
+are generated dynamically on worker startup and communicated to the scheduler during
 the heartbeat. If a client does not have the appropriate certificate for communicating
-securely with a server (after receiving a job allocation from the scheduler), the
+securely with a worker (after receiving a job allocation from the scheduler), the
 certificate will be requested from the scheduler.
 
-# Building the Distributed Server Binaries
+# Building the Distributed Worker Binaries
 
 Until these binaries [are included in releases](https://github.com/paritytech/cachepot/issues/393) I've put together a Docker container that can be used to easily build a release binary:
 
 ```toml
-docker run -ti --rm -v $PWD:/cachepot luser/cachepot-musl-build:0.1 /bin/bash -c "cd /cachepot; cargo build --release --target x86_64-unknown-linux-musl --features=dist-server && strip target/x86_64-unknown-linux-musl/release/cachepot-dist && cd target/x86_64-unknown-linux-musl/release/ && tar czf cachepot-dist.tar.gz cachepot-dist"
+docker run -ti --rm -v $PWD:/cachepot luser/cachepot-musl-build:0.1 /bin/bash -c "cd /cachepot; cargo build --release --target x86_64-unknown-linux-musl --features=dist-worker && strip target/x86_64-unknown-linux-musl/release/cachepot-dist && cd target/x86_64-unknown-linux-musl/release/ && tar czf cachepot-dist.tar.gz cachepot-dist"
 ```

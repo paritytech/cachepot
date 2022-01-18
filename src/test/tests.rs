@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use crate::cache::disk::DiskCache;
-use crate::client::connect_to_server;
+use crate::client::connect_to_coordinator;
 use crate::commands::{do_compile, request_shutdown, request_stats};
+use crate::coordinator::{CachepotCoordinator, CoordinatorMessage, DistClientContainer};
 use crate::jobserver::Client;
 use crate::mock_command::*;
-use crate::server::{CachepotServer, DistClientContainer, ServerMessage};
 use crate::test::utils::*;
 use crate::util::fs::File;
 use futures::channel::oneshot::{self, Sender};
@@ -35,7 +35,7 @@ use tokio::runtime::Runtime;
 
 /// Options for running the server in tests.
 #[derive(Default)]
-struct ServerOptions {
+struct CoordinatorOptions {
     /// The server's idle shutdown timeout.
     idle_timeout: Option<u64>,
     /// The maximum size of the disk cache.
@@ -44,23 +44,23 @@ struct ServerOptions {
 
 /// Run a server on a background thread, and return a tuple of useful things.
 ///
-/// * The port on which the server is listening.
+/// * The port on which the coordinator is listening.
 /// * A `Sender` which can be used to send messages to the server.
-///   (Most usefully, ServerMessage::Shutdown.)
+///   (Most usefully, CoordinatorMessage::Shutdown.)
 /// * An `Arc`-and-`Mutex`-wrapped `MockCommandCreator` which the server will
 ///   use for all process creation.
 /// * The `JoinHandle` for the server thread.
-fn run_server_thread<T>(
+fn run_coordinator_thread<T>(
     cache_dir: &Path,
     options: T,
 ) -> (
     u16,
-    Sender<ServerMessage>,
+    Sender<CoordinatorMessage>,
     Arc<Mutex<MockCommandCreator>>,
     thread::JoinHandle<()>,
 )
 where
-    T: Into<Option<ServerOptions>> + Send + 'static,
+    T: Into<Option<CoordinatorOptions>> + Send + 'static,
 {
     let options = options.into();
     let cache_dir = cache_dir.to_path_buf();
@@ -79,8 +79,8 @@ where
         let storage = Arc::new(DiskCache::new(&cache_dir, cache_size, runtime.handle()));
 
         let client = unsafe { Client::new() };
-        let srv = CachepotServer::new(0, runtime, client, dist_client, storage).unwrap();
-        let mut srv: CachepotServer<Arc<Mutex<MockCommandCreator>>> = srv;
+        let srv = CachepotCoordinator::new(0, runtime, client, dist_client, storage).unwrap();
+        let mut srv: CachepotCoordinator<Arc<Mutex<MockCommandCreator>>> = srv;
         assert!(srv.port() > 0);
         if let Some(options) = options {
             if let Some(timeout) = options.idle_timeout {
@@ -97,11 +97,11 @@ where
 }
 
 #[test]
-fn test_server_shutdown() {
+fn test_coordinator_shutdown() {
     let f = TestFixture::new();
-    let (port, _sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, _sender, _storage, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     // Ask it to shut down
     request_shutdown(conn).unwrap();
     // Ensure that it shuts down.
@@ -110,29 +110,29 @@ fn test_server_shutdown() {
 
 /// The server will shutdown when requested when the idle timeout is disabled.
 #[test]
-fn test_server_shutdown_no_idle() {
+fn test_coordinator_shutdown_no_idle() {
     let f = TestFixture::new();
     // Set a ridiculously low idle timeout.
-    let (port, _sender, _storage, child) = run_server_thread(
+    let (port, _sender, _storage, child) = run_coordinator_thread(
         f.tempdir.path(),
-        ServerOptions {
+        CoordinatorOptions {
             idle_timeout: Some(0),
             ..Default::default()
         },
     );
 
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     request_shutdown(conn).unwrap();
     child.join().unwrap();
 }
 
 #[test]
-fn test_server_idle_timeout() {
+fn test_coordinator_idle_timeout() {
     let f = TestFixture::new();
     // Set a ridiculously low idle timeout.
-    let (_port, _sender, _storage, child) = run_server_thread(
+    let (_port, _sender, _storage, child) = run_coordinator_thread(
         f.tempdir.path(),
-        ServerOptions {
+        CoordinatorOptions {
             idle_timeout: Some(1),
             ..Default::default()
         },
@@ -147,14 +147,14 @@ fn test_server_idle_timeout() {
 #[test]
 fn test_server_stats() {
     let f = TestFixture::new();
-    let (port, sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, _storage, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     // Ask it for stats.
     let info = request_stats(conn).unwrap();
     assert_eq!(0, info.stats.compile_requests);
     // Now signal it to shut down.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }
@@ -162,9 +162,9 @@ fn test_server_stats() {
 #[test]
 fn test_server_unsupported_compiler() {
     let f = TestFixture::new();
-    let (port, sender, server_creator, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, server_creator, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     {
         let mut c = server_creator.lock().unwrap();
         // The server will check the compiler, so pretend to be an unsupported
@@ -202,7 +202,7 @@ fn test_server_unsupported_compiler() {
     // Make sure we ran the mock processes.
     assert_eq!(0, server_creator.lock().unwrap().children.len());
     // Shut down the server.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }
@@ -211,13 +211,13 @@ fn test_server_unsupported_compiler() {
 fn test_server_compile() {
     let _ = env_logger::Builder::new().is_test(true).try_init();
     let f = TestFixture::new();
-    let (port, sender, server_creator, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, server_creator, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
     const PREPROCESSOR_STDOUT: &[u8] = b"preprocessor stdout";
     const PREPROCESSOR_STDERR: &[u8] = b"preprocessor stderr";
     const STDOUT: &[u8] = b"some stdout";
     const STDERR: &[u8] = b"some stderr";
-    let conn = connect_to_server(port).unwrap();
+    let conn = connect_to_coordinator(port).unwrap();
     {
         let mut c = server_creator.lock().unwrap();
         // The server will check the compiler. Pretend it's GCC.
@@ -271,7 +271,7 @@ fn test_server_compile() {
     assert_eq!(STDOUT, stdout.into_inner().as_slice());
     assert_eq!(STDERR, stderr.into_inner().as_slice());
     // Shut down the server.
-    sender.send(ServerMessage::Shutdown).ok().unwrap();
+    sender.send(CoordinatorMessage::Shutdown).ok().unwrap();
     // Ensure that it shuts down.
     child.join().unwrap();
 }
@@ -280,14 +280,14 @@ fn test_server_compile() {
 // test fails intermittently on macos:
 // https://github.com/mozilla/sccache/issues/234
 #[cfg(not(target_os = "macos"))]
-fn test_server_port_in_use() {
+fn test_coordinator_port_in_use() {
     // Bind an arbitrary free port.
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let cachepot = find_cachepot_binary();
     let output = Command::new(&cachepot)
-        .arg("--start-server")
+        .arg("--start-coordinator")
         .env(
-            "CACHEPOT_SERVER_PORT",
+            "CACHEPOT_COORDINATOR_PORT",
             listener.local_addr().unwrap().port().to_string(),
         )
         .output()
@@ -299,6 +299,6 @@ fn test_server_port_in_use() {
         "=====stdout=====\n{}\n=====stderr=====\n{}\n================",
         stdout, stderr,
     );
-    const MSG: &str = "Server startup failed:";
+    const MSG: &str = "Coordinator startup failed:";
     assert!(stderr.contains(MSG), "stderr did not contain '{}':", MSG);
 }

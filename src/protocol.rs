@@ -1,5 +1,5 @@
 use crate::compiler::ColorMode;
-use crate::server::{DistInfo, ServerInfo};
+use crate::coordinator::{CoordinatorInfo, DistInfo};
 use std::ffi::OsString;
 
 /// A client request.
@@ -7,40 +7,40 @@ use std::ffi::OsString;
 pub enum Request {
     /// Zero the server's statistics.
     ZeroStats,
-    /// Get server statistics.
+    /// Get coordinator statistics.
     GetStats,
     /// Get dist status.
     DistStatus,
-    /// Shut the server down gracefully.
+    /// Shut the coordinator down gracefully.
     Shutdown,
     /// Execute a compile or fetch a cached compilation result.
     Compile(Compile),
     ClearCache,
 }
 
-/// A server response.
+/// A coordinator response.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
     /// Response for `Request::Compile`.
     Compile(CompileResponse),
-    /// Response for `Request::GetStats`, containing server statistics.
-    Stats(Box<ServerInfo>),
+    /// Response for `Request::GetStats`, containing coordinator statistics.
+    Stats(Box<CoordinatorInfo>),
     /// Response for `Request::DistStatus`, containing client info.
     DistStatus(DistInfo),
-    /// Response for `Request::Shutdown`, containing server statistics.
-    ShuttingDown(Box<ServerInfo>),
+    /// Response for `Request::Shutdown`, containing coordinator statistics.
+    ShuttingDown(Box<CoordinatorInfo>),
     /// Second response for `Request::Compile`, containing the results of the compilation.
     CompileFinished(CompileFinished),
     /// Response for Request::ClearCache.
     ClearCacheComplete,
 }
 
-/// Possible responses from the server for a `Compile` request.
+/// Possible responses from the coordinator for a `Compile` request.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CompileResponse {
     /// The compilation was started.
     CompileStarted,
-    /// The server could not handle this compilation request.
+    /// The coordinator could not handle this compilation request.
     UnhandledCompile,
     /// The compiler was not supported.
     UnsupportedCompiler(OsString),

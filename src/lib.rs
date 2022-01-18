@@ -51,12 +51,12 @@ mod cmdline;
 mod commands;
 mod compiler;
 pub mod config;
+pub mod coordinator;
 pub mod dist;
 mod jobserver;
 pub mod lru_disk_cache;
 mod mock_command;
 mod protocol;
-pub mod server;
 #[doc(hidden)]
 pub mod util;
 

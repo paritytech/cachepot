@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::compiler;
-use crate::config::ServerUrl;
+use crate::config::WorkerUrl;
 use rand::{rngs::OsRng, RngCore};
 use std::ffi::OsString;
 use std::fmt;
@@ -21,21 +21,21 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::str::FromStr;
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 use std::sync::Mutex;
 
 use crate::errors::*;
 
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 mod cache;
 #[cfg(feature = "dist-client")]
 pub mod client_auth;
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 pub mod http;
 #[cfg(test)]
 mod test;
 
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 pub use crate::dist::cache::TcCache;
 
 // TODO: paths (particularly outputs, which are accessed by an unsandboxed program)
@@ -350,13 +350,12 @@ impl FromStr for JobId {
         u64::from_str(s).map(JobId)
     }
 }
-
 #[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ServerNonce(u64);
-impl ServerNonce {
+pub struct WorkerNonce(u64);
+impl WorkerNonce {
     pub fn new() -> Self {
-        ServerNonce(OsRng.next_u64())
+        WorkerNonce(OsRng.next_u64())
     }
 }
 
@@ -457,7 +456,7 @@ impl From<ProcessOutput> for process::Output {
 #[serde(deny_unknown_fields)]
 pub struct OutputData(Vec<u8>, u64);
 impl OutputData {
-    #[cfg(any(feature = "dist-server", all(feature = "dist-client", test)))]
+    #[cfg(any(feature = "dist-worker", all(feature = "dist-client", test)))]
     pub fn try_from_reader<R: Read>(r: R) -> io::Result<Self> {
         use flate2::read::ZlibEncoder as ZlibReadEncoder;
         use flate2::Compression;
@@ -499,7 +498,7 @@ impl fmt::Display for OutputDataLens {
 pub struct JobAlloc {
     pub auth: String,
     pub job_id: JobId,
-    pub server_id: ServerUrl,
+    pub worker_url: WorkerUrl,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -531,11 +530,11 @@ pub enum UpdateJobStateResult {
     Fail { msg: String },
 }
 
-// HeartbeatServer
+// HeartbeatWorker
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeartbeatServerResult {
+pub struct HeartbeatWorkerResult {
     pub is_new: bool,
 }
 
@@ -604,25 +603,25 @@ impl<'a> Read for InputsReader<'a> {
     }
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 type ExtResult<T, E> = ::std::result::Result<T, E>;
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 #[async_trait]
 pub trait SchedulerOutgoing: Send + Sync {
     // To Server
     async fn do_assign_job(
         &self,
-        server_id: ServerUrl,
+        worker_url: WorkerUrl,
         job_id: JobId,
         tc: Toolchain,
         auth: String,
     ) -> Result<AssignJobResult>;
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 #[async_trait]
-pub trait ServerOutgoing: Send + Sync {
+pub trait WorkerOutgoing: Send + Sync {
     // To Scheduler
     async fn do_update_job_state(
         &self,
@@ -632,13 +631,13 @@ pub trait ServerOutgoing: Send + Sync {
 }
 
 // Trait to handle the creation and verification of job authorization tokens
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub trait JobAuthorizer: Send + Sync {
     fn generate_token(&self, job_id: JobId) -> Result<String>;
     fn verify_token(&self, job_id: JobId, token: &str) -> Result<()>;
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 #[async_trait]
 pub trait SchedulerIncoming: Send + Sync {
     // From Client
@@ -648,44 +647,44 @@ pub trait SchedulerIncoming: Send + Sync {
         tc: Toolchain,
     ) -> ExtResult<AllocJobResult, Error>;
     // From Server
-    fn handle_heartbeat_server(
+    fn handle_heartbeat_worker(
         &self,
-        server_id: ServerUrl,
-        server_nonce: ServerNonce,
+        worker_url: WorkerUrl,
+        worker_nonce: WorkerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
-    ) -> ExtResult<HeartbeatServerResult, Error>;
+    ) -> ExtResult<HeartbeatWorkerResult, Error>;
     // From Server
     fn handle_update_job_state(
         &self,
         job_id: JobId,
-        server_id: ServerUrl,
+        worker_url: WorkerUrl,
         job_state: JobState,
     ) -> ExtResult<UpdateJobStateResult, Error>;
     // From anyone
     fn handle_status(&self) -> ExtResult<SchedulerStatusResult, Error>;
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 #[async_trait]
-pub trait ServerIncoming: Send + Sync {
+pub trait WorkerIncoming: Send + Sync {
     // From Scheduler
     async fn handle_assign_job(
         &self,
         job_id: JobId,
         tc: Toolchain,
     ) -> ExtResult<AssignJobResult, Error>;
-    // From Client
+    // From Coordinator
     async fn handle_submit_toolchain(
         &self,
-        requester: &dyn ServerOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         tc_rdr: ToolchainReader<'_>,
     ) -> ExtResult<SubmitToolchainResult, Error>;
-    // From Client
+    // From Coordinator
     async fn handle_run_job(
         &self,
-        requester: &dyn ServerOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,
@@ -693,7 +692,7 @@ pub trait ServerIncoming: Send + Sync {
     ) -> ExtResult<RunJobResult, Error>;
 }
 
-#[cfg(feature = "dist-server")]
+#[cfg(feature = "dist-worker")]
 pub trait BuilderIncoming: Send + Sync {
     // From Server
     fn run_build(

@@ -24,36 +24,36 @@ wintarget() {
 # all-windows doesn't work as redis-rs build.rs has issues (checks for cfg!(unix))
 
 if [ "$1" = checkall ]; then
-    $CARGO check --target $target --all-targets --features 'all dist-client dist-server dist-tests'
-    $CARGO check --target $target --all-targets --features 'all dist-client dist-server'
+    $CARGO check --target $target --all-targets --features 'all dist-client dist-worker dist-tests'
+    $CARGO check --target $target --all-targets --features 'all dist-client dist-worker'
     $CARGO check --target $target --all-targets --features 'all dist-client dist-tests'
-    $CARGO check --target $target --all-targets --features 'all dist-server dist-tests'
+    $CARGO check --target $target --all-targets --features 'all dist-worker dist-tests'
     $CARGO check --target $target --all-targets --features 'all dist-client'
-    $CARGO check --target $target --all-targets --features 'all dist-server'
+    $CARGO check --target $target --all-targets --features 'all dist-worker'
     $CARGO check --target $target --all-targets --features 'all dist-tests'
     $CARGO check --target $target --all-targets --features 'all'
-    $CARGO check --target $target --all-targets --features 'dist-client dist-server dist-tests'
-    $CARGO check --target $target --all-targets --features 'dist-client dist-server'
+    $CARGO check --target $target --all-targets --features 'dist-client dist-worker dist-tests'
+    $CARGO check --target $target --all-targets --features 'dist-client dist-worker'
     $CARGO check --target $target --all-targets --features 'dist-client dist-tests'
-    $CARGO check --target $target --all-targets --features 'dist-server dist-tests'
+    $CARGO check --target $target --all-targets --features 'dist-worker dist-tests'
     $CARGO check --target $target --all-targets --features 'dist-client'
-    $CARGO check --target $target --all-targets --features 'dist-server'
+    $CARGO check --target $target --all-targets --features 'dist-worker'
     $CARGO check --target $target --all-targets --features 'dist-tests'
     $CARGO check --target $target --all-targets --features ''
-    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client dist-server dist-tests'
-    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client dist-server'
+    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client dist-worker dist-tests'
+    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client dist-worker'
     $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client dist-tests'
-    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-server dist-tests'
+    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-worker dist-tests'
     $CARGO check --target $target --all-targets --no-default-features --features 'all dist-client'
-    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-server'
+    $CARGO check --target $target --all-targets --no-default-features --features 'all dist-worker'
     $CARGO check --target $target --all-targets --no-default-features --features 'all dist-tests'
     $CARGO check --target $target --all-targets --no-default-features --features 'all'
-    $CARGO check --target $target --all-targets --no-default-features --features 'dist-client dist-server dist-tests'
-    $CARGO check --target $target --all-targets --no-default-features --features 'dist-client dist-server'
+    $CARGO check --target $target --all-targets --no-default-features --features 'dist-client dist-worker dist-tests'
+    $CARGO check --target $target --all-targets --no-default-features --features 'dist-client dist-worker'
     $CARGO check --target $target --all-targets --no-default-features --features 'dist-client dist-tests'
-    $CARGO check --target $target --all-targets --no-default-features --features 'dist-server dist-tests'
+    $CARGO check --target $target --all-targets --no-default-features --features 'dist-worker dist-tests'
     $CARGO check --target $target --all-targets --no-default-features --features 'dist-client'
-    $CARGO check --target $target --all-targets --no-default-features --features 'dist-server'
+    $CARGO check --target $target --all-targets --no-default-features --features 'dist-worker'
     $CARGO check --target $target --all-targets --no-default-features --features 'dist-tests'
     $CARGO check --target $target --all-targets --no-default-features --features ''
     wintarget
@@ -89,7 +89,7 @@ elif [ "$1" = test ]; then
     fi
     set -x
 
-    RUST_BACKTRACE=1 $CARGO test $NORUN --target $target --features 'all dist-client dist-server dist-tests' $VERBOSE -- $NOCAPTURE $TESTTHREADS test_dist_nobuilder
+    RUST_BACKTRACE=1 $CARGO test $NORUN --target $target --features 'all dist-client dist-worker dist-tests' $VERBOSE -- $NOCAPTURE $TESTTHREADS test_dist_nobuilder
 
 else
     echo invalid command

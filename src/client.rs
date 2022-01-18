@@ -21,34 +21,34 @@ use std::io::{self, BufReader, BufWriter, Read};
 use std::net::TcpStream;
 
 /// A connection to an cachepot server.
-pub struct ServerConnection {
-    /// A reader for the socket connected to the server.
+pub struct CoordinatorConnection {
+    /// A reader for the socket connected to the coordinator.
     reader: BufReader<TcpStream>,
-    /// A writer for the socket connected to the server.
+    /// A writer for the socket connected to the coordinator.
     writer: BufWriter<TcpStream>,
 }
 
-impl ServerConnection {
+impl CoordinatorConnection {
     /// Create a new connection using `stream`.
-    pub fn new(stream: TcpStream) -> io::Result<ServerConnection> {
+    pub fn new(stream: TcpStream) -> io::Result<CoordinatorConnection> {
         let writer = stream.try_clone()?;
-        Ok(ServerConnection {
+        Ok(CoordinatorConnection {
             reader: BufReader::new(stream),
             writer: BufWriter::new(writer),
         })
     }
 
-    /// Send `request` to the server, read and return a `Response`.
+    /// Send `request` to the coordinator, read and return a `Response`.
     pub fn request(&mut self, request: Request) -> Result<Response> {
-        trace!("ServerConnection::request");
+        trace!("CoordinatorConnection::request");
         util::write_length_prefixed_bincode(&mut self.writer, request)?;
-        trace!("ServerConnection::request: sent request");
+        trace!("CoordinatorConnection::request: sent request");
         self.read_one_response()
     }
 
-    /// Read a single `Response` from the server.
+    /// Read a single `Response` from the coordinator.
     pub fn read_one_response(&mut self) -> Result<Response> {
-        trace!("ServerConnection::read_one_response");
+        trace!("CoordinatorConnection::read_one_response");
         let mut bytes = [0; 4];
         self.reader
             .read_exact(&mut bytes)
@@ -62,28 +62,30 @@ impl ServerConnection {
     }
 }
 
-/// Establish a TCP connection to an cachepot server listening on `port`.
-pub fn connect_to_server(port: u16) -> io::Result<ServerConnection> {
-    trace!("connect_to_server({})", port);
+/// Establish a TCP connection to an cachepot coordinator listening on `port`.
+pub fn connect_to_coordinator(port: u16) -> io::Result<CoordinatorConnection> {
+    trace!("connect_to_coordinator({})", port);
     let stream = TcpStream::connect(("127.0.0.1", port))?;
-    ServerConnection::new(stream)
+    CoordinatorConnection::new(stream)
 }
 
-/// Attempt to establish a TCP connection to an cachepot server listening on `port`.
+/// Attempt to establish a TCP connection to an cachepot coordinator listening on `port`.
 ///
 /// If the connection fails, retry a few times.
-pub fn connect_with_retry(port: u16) -> io::Result<ServerConnection> {
+pub fn connect_with_retry(port: u16) -> io::Result<CoordinatorConnection> {
     trace!("connect_with_retry({})", port);
     // TODOs:
-    // * Pass the server Child in here, so we can stop retrying
+    // * Pass the coordinator Child in here, so we can stop retrying
     //   if the process exited.
-    // * Send a pipe handle to the server process so it can notify
-    //   us once it starts the server instead of us polling.
-    match retry(Fixed::from_millis(500).take(10), || connect_to_server(port)) {
+    // * Send a pipe handle to the coordinator process so it can notify
+    //   us once it starts the coordinator instead of us polling.
+    match retry(Fixed::from_millis(500).take(10), || {
+        connect_to_coordinator(port)
+    }) {
         Ok(conn) => Ok(conn),
         _ => Err(io::Error::new(
             io::ErrorKind::TimedOut,
-            "Connection to server timed out",
+            "Connection to coordinator timed out",
         )),
     }
 }

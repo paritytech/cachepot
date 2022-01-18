@@ -515,9 +515,9 @@ where
             }
         }?;
         let job_id = job_alloc.job_id;
-        let server_id = job_alloc.server_id.clone();
+        let worker_url = job_alloc.worker_url.clone();
         debug!("[{}]: Running job", out_pretty);
-        let ((job_id, server_id), (jres, path_transformer)) = dist_client
+        let ((job_id, worker_url), (jres, path_transformer)) = dist_client
             .do_run_job(
                 job_alloc,
                 dist_compile_cmd,
@@ -525,11 +525,11 @@ where
                 inputs_packager,
             )
             .await
-            .map(|res| ((job_id, server_id.clone()), res))
+            .map(|res| ((job_id, worker_url.clone()), res))
             .with_context(|| {
                 format!(
                     "could not run distributed compilation job on {:?}",
-                    server_id.clone()
+                    worker_url.clone()
                 )
             })?;
 
@@ -588,7 +588,7 @@ where
         try_or_cleanup!(outputs_rewriter
             .handle_outputs(&path_transformer, &output_paths, &extra_inputs)
             .with_context(|| "failed to rewrite outputs from compile"));
-        Ok((DistType::Ok(server_id), jc.output.into()))
+        Ok((DistType::Ok(worker_url), jc.output.into()))
     };
 
     use futures::TryFutureExt;
@@ -722,7 +722,7 @@ pub enum DistType {
     /// Distribution was not enabled.
     NoDist,
     /// Distributed compile success.
-    Ok(crate::config::ServerUrl),
+    Ok(crate::config::WorkerUrl),
     /// Distributed compile failed.
     Error,
 }
@@ -1950,7 +1950,7 @@ LLVM version: 6.0",
 #[cfg(test)]
 #[cfg(feature = "dist-client")]
 mod test_dist {
-    use crate::config::ServerUrl;
+    use crate::config::WorkerUrl;
     use crate::dist::pkg;
     use crate::dist::{
         self, AllocJobResult, CompileCommand, JobAlloc, JobComplete, JobId, OutputData,
@@ -2091,7 +2091,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    worker_url: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2160,7 +2160,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    worker_url: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })
@@ -2241,7 +2241,7 @@ mod test_dist {
                 job_alloc: JobAlloc {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
-                    server_id: ServerUrl::from_str("0.0.0.0:1").unwrap(),
+                    worker_url: WorkerUrl::from_str("0.0.0.0:1").unwrap(),
                 },
                 need_toolchain: true,
             })

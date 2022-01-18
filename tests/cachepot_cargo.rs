@@ -40,10 +40,10 @@ fn test_rust_cargo_cmd(cmd: &str, extra_envs: &[(&str, &std::ffi::OsStr)]) {
     }
 
     fn stop() {
-        trace!("cachepot --stop-server");
+        trace!("cachepot --stop-coordinator");
         drop(
             cachepot_command()
-                .arg("--stop-server")
+                .arg("--stop-coordinator")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status(),
@@ -80,9 +80,9 @@ fn test_rust_cargo_cmd(cmd: &str, extra_envs: &[(&str, &std::ffi::OsStr)]) {
     let cargo_dir = tempdir.path().join("cargo");
     fs::create_dir(&cargo_dir).unwrap();
     // Start a new cachepot server.
-    trace!("cachepot --start-server");
+    trace!("cachepot --start-coordinator");
     cachepot_command()
-        .arg("--start-server")
+        .arg("--start-coordinator")
         .env("CACHEPOT_DIR", &cache_dir)
         .assert()
         .success();

@@ -52,7 +52,7 @@ jobs:
             rustc: 1.56.1 # Oldest supported version, keep in sync with README.md
           - os: ubuntu-20.04
             rustc: 1.56.1
-            extra_desc: dist-server
+            extra_desc: dist-worker
             extra_args: --no-default-features --features=dist-tests test_dist_ -- --test-threads 1
           - os: ubuntu-20.04
             rustc: stable
@@ -153,9 +153,9 @@ jobs:
           path: target_repo
 
       - name: Double-check that cachepot is not running
-        run: cachepot --stop-server || true
+        run: cachepot --stop-coordinator || true
       - name: Start the local cachepot server daemon
-        run: cachepot --start-server
+        run: cachepot --start-coordinator
         # This is the main server that's going to send the compilation requests
         # so logging is more important for this than for subsequent (client)
         # cachepot invocations
@@ -192,10 +192,10 @@ jobs:
         include:
           - os: ubuntu-20.04
             target: x86_64-unknown-linux-musl
-            extra_args: --features="dist-server"
+            extra_args: --features="dist-worker"
           - os: ubuntu-20.04
             binary: cachepot-dist
-            extra_args: --features="dist-server"
+            extra_args: --features="dist-worker"
             target: x86_64-unknown-linux-musl
           - os: ubuntu-20.04
             target: aarch64-unknown-linux-musl

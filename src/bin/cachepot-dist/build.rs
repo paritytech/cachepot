@@ -858,7 +858,7 @@ impl DockerBuilder {
 }
 
 impl BuilderIncoming for DockerBuilder {
-    // From Server
+    // From Coordinator
     fn run_build(
         &self,
         tc: Toolchain,

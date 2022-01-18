@@ -60,11 +60,11 @@ pub struct Command2 {
 
     /// start background server
     #[structopt(long, group = "flags")]
-    start_server: bool,
+    start_coordinator: bool,
 
     /// stop background server
     #[structopt(long, group = "flags")]
-    stop_server: bool,
+    stop_coordinator: bool,
 
     /// show cache statistics
     #[structopt(short, long, group = "flags")]
@@ -86,8 +86,13 @@ pub struct Command2 {
     )]
     package_toolchain: Vec<PathBuf>,
 
-    #[structopt(long, hidden = true, group = "flags", env = "CACHEPOT_START_SERVER")]
-    internal_start_server: Option<String>,
+    #[structopt(
+        long,
+        hidden = true,
+        group = "flags",
+        env = "CACHEPOT_START_COORDINATOR"
+    )]
+    internal_start_coordinator: Option<String>,
 
     /// set output format of statistics
     #[structopt(long, default_value = "text", possible_values = StatsFormat::VARIANTS)]
@@ -100,18 +105,18 @@ impl TryFrom<Command2> for Command {
     type Error = anyhow::Error;
 
     fn try_from(cmd: Command2) -> Result<Self> {
-        if Some("1") == cmd.internal_start_server.as_deref() {
-            Ok(Command::InternalStartServer)
+        if Some("1") == cmd.internal_start_coordinator.as_deref() {
+            Ok(Command::InternalStartCoordinator)
         } else if cmd.show_stats {
             Ok(Command::ShowStats(cmd.stats_format))
         } else if cmd.dist_status {
             Ok(Command::DistStatus)
         } else if cmd.zero_stats {
             Ok(Command::ZeroStats)
-        } else if cmd.start_server {
-            Ok(Command::StartServer)
-        } else if cmd.stop_server {
-            Ok(Command::StopServer)
+        } else if cmd.start_coordinator {
+            Ok(Command::StartCoordinator)
+        } else if cmd.stop_coordinator {
+            Ok(Command::StopCoordinator)
         } else if cmd.dist_auth {
             Ok(Command::DistAuth)
         } else if cmd.clear_cache {
@@ -158,11 +163,11 @@ pub enum Command {
     /// Show cache statistics and exit.
     ShowStats(StatsFormat),
     /// Run background server.
-    InternalStartServer,
-    /// Start background server as a subprocess.
-    StartServer,
+    InternalStartCoordinator,
+    /// Start background coordinator as a subprocess.
+    StartCoordinator,
     /// Stop background server.
-    StopServer,
+    StopCoordinator,
     /// Zero cache statistics and exit.
     ZeroStats,
     /// Show the status of the distributed client.

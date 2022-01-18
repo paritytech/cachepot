@@ -463,7 +463,7 @@ pub fn daemonize() -> Result<()> {
 
     // We don't have a parent process any more once we've reached this point,
     // which means that no one's probably listening for our exit status.
-    // In order to assist with debugging crashes of the server we configure our
+    // In order to assist with debugging crashes of the coordinator we configure our
     // rlimit to allow runtime dumps and we also install a signal handler for
     // segfaults which at least prints out what just happened.
     unsafe {
@@ -544,7 +544,7 @@ pub fn daemonize() -> Result<()> {
 // More context:
 // https://github.com/seanmonstar/reqwest/issues/1328
 // https://github.com/briansmith/webpki/issues/54
-#[cfg(any(feature = "dist-client", feature = "dist-server"))]
+#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 pub fn native_tls_no_sni_client_builder<'a, I, T>(root_certs: I) -> Result<reqwest::ClientBuilder>
 where
     I: Iterator<Item = T>,

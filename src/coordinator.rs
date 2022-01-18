@@ -66,7 +66,7 @@ use tower::Service;
 
 use crate::errors::*;
 
-/// If the server is idle for this many seconds, shut down.
+/// If the coordinator is idle for this many seconds, shut down.
 const DEFAULT_IDLE_TIMEOUT: u64 = 600;
 
 /// If the dist client couldn't be created, retry creation at this number
@@ -74,20 +74,20 @@ const DEFAULT_IDLE_TIMEOUT: u64 = 600;
 #[cfg(feature = "dist-client")]
 const DIST_CLIENT_RECREATE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Result of background server startup.
+/// Result of background coordinator startup.
 #[derive(Debug, Serialize, Deserialize)]
-pub enum ServerStartup {
-    /// Server started successfully on `port`.
+pub enum CoordinatorStartup {
+    /// Coordinator started successfully on `port`.
     Ok { port: u16 },
-    /// Server Addr already in suse
+    /// Coordinator Addr already in suse
     AddrInUse,
-    /// Timed out waiting for server startup.
+    /// Timed out waiting for coordinator startup.
     TimedOut,
-    /// Server encountered an error.
+    /// Coordinator encountered an error.
     Err { reason: String },
 }
 
-/// Get the time the server should idle for before shutting down.
+/// Get the time the coordinator should idle for before shutting down.
 fn get_idle_timeout() -> u64 {
     // A value of 0 disables idle shutdown entirely.
     env::var("CACHEPOT_IDLE_TIMEOUT")
@@ -96,12 +96,12 @@ fn get_idle_timeout() -> u64 {
         .unwrap_or(DEFAULT_IDLE_TIMEOUT)
 }
 
-fn notify_server_startup_internal<W: Write>(mut w: W, status: ServerStartup) -> Result<()> {
+fn notify_server_startup_internal<W: Write>(mut w: W, status: CoordinatorStartup) -> Result<()> {
     util::write_length_prefixed_bincode(&mut w, status)
 }
 
 #[cfg(unix)]
-fn notify_server_startup(name: &Option<OsString>, status: ServerStartup) -> Result<()> {
+fn notify_server_startup(name: &Option<OsString>, status: CoordinatorStartup) -> Result<()> {
     use std::os::unix::net::UnixStream;
     let name = match *name {
         Some(ref s) => s,
@@ -113,7 +113,7 @@ fn notify_server_startup(name: &Option<OsString>, status: ServerStartup) -> Resu
 }
 
 #[cfg(windows)]
-fn notify_server_startup(name: &Option<OsString>, status: ServerStartup) -> Result<()> {
+fn notify_server_startup(name: &Option<OsString>, status: CoordinatorStartup) -> Result<()> {
     use crate::util::fs::OpenOptions;
 
     let name = match *name {
@@ -142,7 +142,7 @@ pub struct DistClientContainer {
 
 #[cfg(feature = "dist-client")]
 struct DistClientConfig {
-    // Reusable items tied to an CachepotServer instance
+    // Reusable items tied to an CachepotCoordinator instance
     pool: tokio::runtime::Handle,
 
     // From the static dist configuration
@@ -399,7 +399,7 @@ impl DistClientContainer {
 ///
 /// Spins an event loop handling client connections until a client
 /// requests a shutdown.
-pub fn start_server(config: &Config, port: u16) -> Result<()> {
+pub fn start_coordinator(config: &Config, port: u16) -> Result<()> {
     info!("start_server: port: {}", port);
     let client = unsafe { Client::new() };
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -409,14 +409,19 @@ pub fn start_server(config: &Config, port: u16) -> Result<()> {
     let pool = runtime.handle().clone();
     let dist_client = DistClientContainer::new(config, &pool);
     let storage = storage_from_config(config, &pool);
-    let res =
-        CachepotServer::<ProcessCommandCreator>::new(port, runtime, client, dist_client, storage);
+    let res = CachepotCoordinator::<ProcessCommandCreator>::new(
+        port,
+        runtime,
+        client,
+        dist_client,
+        storage,
+    );
     let notify = env::var_os("CACHEPOT_STARTUP_NOTIFY");
     match res {
         Ok(srv) => {
             let port = srv.port();
             info!("server started, listening on port {}", port);
-            notify_server_startup(&notify, ServerStartup::Ok { port })?;
+            notify_server_startup(&notify, CoordinatorStartup::Ok { port })?;
             srv.run(future::pending::<()>())?;
             Ok(())
         }
@@ -424,11 +429,11 @@ pub fn start_server(config: &Config, port: u16) -> Result<()> {
             error!("failed to start server: {}", e);
             match e.downcast_ref::<io::Error>() {
                 Some(io_err) if io::ErrorKind::AddrInUse == io_err.kind() => {
-                    notify_server_startup(&notify, ServerStartup::AddrInUse)?;
+                    notify_server_startup(&notify, CoordinatorStartup::AddrInUse)?;
                 }
                 _ => {
                     let reason = e.to_string();
-                    notify_server_startup(&notify, ServerStartup::Err { reason })?;
+                    notify_server_startup(&notify, CoordinatorStartup::Err { reason })?;
                 }
             };
             Err(e)
@@ -436,23 +441,23 @@ pub fn start_server(config: &Config, port: u16) -> Result<()> {
     }
 }
 
-pub struct CachepotServer<C: CommandCreatorSync> {
+pub struct CachepotCoordinator<C: CommandCreatorSync> {
     runtime: Runtime,
     listener: TcpListener,
-    rx: mpsc::Receiver<ServerMessage>,
+    rx: mpsc::Receiver<CoordinatorMessage>,
     timeout: Duration,
     service: CachepotService<C>,
     wait: WaitUntilZero,
 }
 
-impl<C: CommandCreatorSync> CachepotServer<C> {
+impl<C: CommandCreatorSync> CachepotCoordinator<C> {
     pub fn new(
         port: u16,
         runtime: Runtime,
         client: Client,
         dist_client: DistClientContainer,
         storage: Arc<dyn Storage>,
-    ) -> Result<CachepotServer<C>> {
+    ) -> Result<CachepotCoordinator<C>> {
         let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
         let listener = runtime.block_on(TcpListener::bind(&SocketAddr::V4(addr)))?;
 
@@ -463,7 +468,7 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
         let pool = runtime.handle().clone();
         let service = CachepotService::new(dist_client, storage, &client, pool, tx, info);
 
-        Ok(CachepotServer {
+        Ok(CachepotCoordinator {
             runtime,
             listener,
             rx,
@@ -473,13 +478,13 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
         })
     }
 
-    /// Configures how long this server will be idle before shutting down.
+    /// Configures how long this coordinator will be idle before shutting down.
     #[allow(dead_code)]
     pub fn set_idle_timeout(&mut self, timeout: Duration) {
         self.timeout = timeout;
     }
 
-    /// Set the storage this server will use.
+    /// Set the storage this coordinator will use.
     #[allow(dead_code)]
     pub fn set_storage(&mut self, storage: Arc<dyn Storage>) {
         self.service.storage = storage;
@@ -491,29 +496,29 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
         &self.service.rt
     }
 
-    /// Returns a reference to the command creator this server will use
+    /// Returns a reference to the command creator this coordinator will use
     #[allow(dead_code)]
     pub fn command_creator(&self) -> &C {
         &self.service.creator
     }
 
-    /// Returns the port that this server is bound to
+    /// Returns the port that this coordinator is bound to
     #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.listener.local_addr().unwrap().port()
     }
 
-    /// Runs this server to completion.
+    /// Runs this coordinator to completion.
     ///
-    /// If the `shutdown` future resolves then the server will be shut down,
-    /// otherwise the server may naturally shut down if it becomes idle for too
+    /// If the `shutdown` future resolves then the coordinator will be shut down,
+    /// otherwise the coordinator may naturally shut down if it becomes idle for too
     /// long anyway.
     pub fn run<F>(self, shutdown: F) -> io::Result<()>
     where
         F: Future,
         C: Send,
     {
-        let CachepotServer {
+        let CachepotCoordinator {
             runtime,
             listener,
             rx,
@@ -524,7 +529,7 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
 
         // Create our "server future" which will simply handle all incoming
         // connections in separate tasks.
-        let server = async move {
+        let coordinator = async move {
             loop {
                 let (socket, _) = listener.accept().await?;
                 trace!("incoming connection");
@@ -538,11 +543,11 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
             }
         };
 
-        // Right now there's a whole bunch of ways to shut down this server for
+        // Right now there's a whole bunch of ways to shut down this coordinator for
         // various purposes. These include:
         //
         // 1. The `shutdown` future above.
-        // 2. An RPC indicating the server should shut down
+        // 2. An RPC indicating the coordinator should shut down
         // 3. A period of inactivity (no requests serviced)
         //
         // These are all encapsulated wih the future that we're creating below.
@@ -570,7 +575,7 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
 
         runtime.block_on(async {
             futures::select! {
-                server = server.fuse() => server,
+                coordinator = coordinator.fuse() => coordinator,
                 _res = shutdown.fuse() => Ok(()),
                 _res = shutdown_idle.fuse() => Ok::<_, io::Error>(()),
             }
@@ -583,7 +588,7 @@ impl<C: CommandCreatorSync> CachepotServer<C> {
             SHUTDOWN_TIMEOUT.as_secs()
         );
 
-        // Once our server has shut down either due to inactivity or a manual
+        // Once our coordinator has shut down either due to inactivity or a manual
         // request we still need to give a bit of time for all active
         // connections to finish. This `wait` future will resolve once all
         // instances of `CachepotService` have been dropped.
@@ -633,8 +638,8 @@ struct CachepotService<C>
 where
     C: Send,
 {
-    /// Server statistics.
-    stats: Arc<RwLock<ServerStats>>,
+    /// Coordinator statistics.
+    stats: Arc<RwLock<CoordinatorStats>>,
 
     /// Distributed cachepot client
     dist_client: Arc<DistClientContainer>,
@@ -664,10 +669,10 @@ where
 
     /// Message channel used to learn about requests received by this server.
     ///
-    /// Note that messages sent along this channel will keep the server alive
+    /// Note that messages sent along this channel will keep the coordinator alive
     /// (reset the idle timer) and this channel can also be used to shut down
-    /// the entire server immediately via a message.
-    tx: mpsc::Sender<ServerMessage>,
+    /// the entire coordinator immediately via a message.
+    tx: mpsc::Sender<CoordinatorMessage>,
 
     /// Information tracking how many services (connected clients) are active.
     _info: ActiveInfo,
@@ -680,8 +685,8 @@ type CachepotResponse = Message<Response, Body<Response>>;
 ///
 /// Whenever a request is receive a `Request` message is sent which will reset
 /// the idle shutdown timer, and otherwise a `Shutdown` message indicates that
-/// a server shutdown was requested via an RPC.
-pub enum ServerMessage {
+/// a coordinator shutdown was requested via an RPC.
+pub enum CoordinatorMessage {
     /// A message sent whenever a request is received.
     Request,
     /// Message sent whenever a shutdown request is received.
@@ -702,7 +707,7 @@ where
         // Opportunistically let channel know that we've received a request. We
         // ignore failures here as well as backpressure as it's not imperative
         // that every message is received.
-        drop(self.tx.clone().start_send(ServerMessage::Request));
+        drop(self.tx.clone().start_send(CoordinatorMessage::Request));
 
         let me = self.clone();
         Box::pin(async move {
@@ -739,7 +744,7 @@ where
                     let mut tx = me.tx.clone();
                     future::try_join(
                         async {
-                            let _ = tx.send(ServerMessage::Shutdown).await;
+                            let _ = tx.send(CoordinatorMessage::Shutdown).await;
                             Ok(())
                         },
                         me.get_info(),
@@ -776,11 +781,11 @@ where
         storage: Arc<dyn Storage>,
         client: &Client,
         rt: tokio::runtime::Handle,
-        tx: mpsc::Sender<ServerMessage>,
+        tx: mpsc::Sender<CoordinatorMessage>,
         info: ActiveInfo,
     ) -> CachepotService<C> {
         CachepotService {
-            stats: Arc::new(RwLock::new(ServerStats::default())),
+            stats: Arc::new(RwLock::new(CoordinatorStats::default())),
             dist_client: Arc::new(dist_client),
             storage,
             compilers: Arc::new(RwLock::new(HashMap::new())),
@@ -841,11 +846,11 @@ where
     }
 
     /// Get info and stats about the cache.
-    async fn get_info(&self) -> Result<ServerInfo> {
+    async fn get_info(&self) -> Result<CoordinatorInfo> {
         let stats = self.stats.read().await.clone();
         let cache_location = self.storage.location();
         futures::try_join!(self.storage.current_size(), self.storage.max_size()).map(
-            move |(cache_size, max_cache_size)| ServerInfo {
+            move |(cache_size, max_cache_size)| CoordinatorInfo {
                 stats,
                 cache_location,
                 cache_size,
@@ -856,7 +861,7 @@ where
 
     /// Zero stats about the cache.
     async fn zero_stats(&self) {
-        *self.stats.write().await = ServerStats::default();
+        *self.stats.write().await = CoordinatorStats::default();
     }
 
     async fn clear_cache(&self) -> Result<()> {
@@ -1149,9 +1154,10 @@ where
                             match dist_type {
                                 DistType::NoDist => {}
                                 DistType::Ok(id) => {
-                                    let server_count =
-                                        stats.dist_compiles.entry(id.to_string()).or_insert(0);
-                                    *server_count += 1;
+                                    let coordinator = id.to_string();
+                                    let coordinator_count =
+                                        stats.dist_compiles.entry(coordinator).or_insert(0);
+                                    *coordinator_count += 1;
                                 }
                                 DistType::Error => stats.dist_errors += 1,
                             }
@@ -1302,7 +1308,7 @@ impl PerLanguageCount {
 
 /// Statistics about the server.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerStats {
+pub struct CoordinatorStats {
     /// The count of client compile requests.
     pub compile_requests: u64,
     /// The count of client requests that used an unsupported compiler.
@@ -1342,16 +1348,16 @@ pub struct ServerStats {
     /// Counts of reasons why compiles were not cached.
     pub not_cached: HashMap<String, usize>,
     /// The count of compilations that were successfully distributed indexed
-    /// by the server that ran those compilations.
+    /// by the coordinator that ran those compilations.
     pub dist_compiles: HashMap<String, usize>,
     /// The count of compilations that were distributed but failed and had to be re-run locally
     pub dist_errors: u64,
 }
 
-/// Info and stats about the server.
+/// Info and stats about the coordinator.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ServerInfo {
-    pub stats: ServerStats,
+pub struct CoordinatorInfo {
+    pub stats: CoordinatorStats,
     pub cache_location: String,
     pub cache_size: Option<u64>,
     pub max_cache_size: Option<u64>,
@@ -1367,9 +1373,9 @@ pub enum DistInfo {
     SchedulerStatus(Option<config::HTTPUrl>, dist::SchedulerStatusResult),
 }
 
-impl Default for ServerStats {
-    fn default() -> ServerStats {
-        ServerStats {
+impl Default for CoordinatorStats {
+    fn default() -> CoordinatorStats {
+        CoordinatorStats {
             compile_requests: u64::default(),
             requests_unsupported_compiler: u64::default(),
             requests_not_compile: u64::default(),
@@ -1395,7 +1401,7 @@ impl Default for ServerStats {
     }
 }
 
-impl ServerStats {
+impl CoordinatorStats {
     /// Print stats to stdout in a human-readable format.
     ///
     /// Return the formatted width of each of the (name, value) columns.
@@ -1541,7 +1547,7 @@ impl ServerStats {
     }
 }
 
-impl ServerInfo {
+impl CoordinatorInfo {
     /// Print info to stdout in a human-readable format.
     pub fn print(&self) {
         let (name_width, stat_width) = self.stats.print();
@@ -1707,7 +1713,7 @@ impl<I: AsyncRead + AsyncWrite + Unpin> Sink<Frame<Response, Response>> for Cach
 }
 
 struct ShutdownOrInactive {
-    rx: mpsc::Receiver<ServerMessage>,
+    rx: mpsc::Receiver<CoordinatorMessage>,
     timeout: Option<Pin<Box<Sleep>>>,
     timeout_dur: Duration,
 }
@@ -1720,8 +1726,8 @@ impl Future for ShutdownOrInactive {
             match Pin::new(&mut self.rx).poll_next(cx) {
                 Poll::Pending => break,
                 // Shutdown received!
-                Poll::Ready(Some(ServerMessage::Shutdown)) => return Poll::Ready(()),
-                Poll::Ready(Some(ServerMessage::Request)) => {
+                Poll::Ready(Some(CoordinatorMessage::Shutdown)) => return Poll::Ready(()),
+                Poll::Ready(Some(CoordinatorMessage::Request)) => {
                     if self.timeout_dur != Duration::new(0, 0) {
                         self.timeout = Some(Box::pin(sleep(self.timeout_dur)));
                     }

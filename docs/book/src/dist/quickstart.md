@@ -5,39 +5,39 @@ macOS and Windows clients are supported but have seen significantly less testing
 
 ## Get cachepot binaries
 
-Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the `dist-client` and `dist-server` features enabled:
+Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the `dist-client` and `dist-worker` features enabled:
 
 ```sh
-cargo build --release --features="dist-client dist-server"
+cargo build --release --features="dist-client dist-worker"
 ```
 
-The `target/release/cachepot` binary will be used on the client, and the `target/release/cachepot-dist` binary will be used on the scheduler and build server.
+The `target/release/cachepot` binary will be used on the client, and the `target/release/cachepot-dist` binary will be used on the scheduler and build worker.
 
 If you're only planning to use the client, it is enabled by default, so just `cargo install cachepot` should do the trick.
 
 ## Configure a scheduler
 
-If you're adding a server to a cluster that has already be set up, skip ahead to [configuring a build server](#configure-a-build-server).
+If you're adding a worker to a cluster that has already be set up, skip ahead to [configuring a build worker](#configure-a-build-coordinator).
 
-The scheduler is a daemon that manages compile request from clients and parcels them out to build servers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.
+The scheduler is a daemon that manages compile request from clients and parcels them out to build workers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.
 
-Create a scheduler.conf file to configure client/server authentication. A minimal example looks like:
+Create a scheduler.conf file to configure client/worker authentication. A minimal example looks like:
 
 ```toml
 # The socket address the scheduler will listen on. It's strongly recommended
-# to listen on localhost and put a HTTPS server in front of it.
+# to listen on localhost and put a HTTPS worker in front of it.
 public_addr = "127.0.0.1:10600"
 
 [client_auth]
 type = "token"
 token = "my client token"
 
-[server_auth]
+[worker_auth]
 type = "jwt_hs256"
 secret_key = "my secret key"
 ```
 
-Mozilla build servers will typically require clients to be authenticated with the
+Mozilla build workers will typically require clients to be authenticated with the
 [Mozilla identity system](https://github.com/mozilla-iam/mozilla-iam).
 
 To configure for scheduler for this, the `client_auth` section should be as follows
@@ -57,15 +57,15 @@ Start the scheduler by running:
 cachepot-dist scheduler --config scheduler.conf
 ```
 
-Like the local server, the scheduler process will daemonize itself unless `CACHEPOT_NO_DAEMON=1` is set. If the scheduler fails to start you may need to set `RUST_LOG=trace` when starting it to get useful diagnostics (or to get less noisy logs: `RUST_LOG=cachepot=trace,cachepot-dist=trace` ).
+Like the local worker, the scheduler process will daemonize itself unless `CACHEPOT_NO_DAEMON=1` is set. If the scheduler fails to start you may need to set `RUST_LOG=trace` when starting it to get useful diagnostics (or to get less noisy logs: `RUST_LOG=cachepot=trace,cachepot-dist=trace` ).
 
-### Configure a build server
+### Configure a build worker
 
-A build server communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build server, but executing cross-compile requests from macOS/Windows clients is supported.
+A build worker communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build worker, but executing cross-compile requests from macOS/Windows clients is supported.
 
-The build server requires [bubblewrap](https://github.com/projectatomic/bubblewrap) to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap *before* attempting to run the server. On Ubuntu 18.10+ you can `apt install bubblewrap` to install it. If you build from source you will need to first install your distro's equivalent of the `libcap-dev` package.
+The build worker requires [bubblewrap](https://github.com/projectatomic/bubblewrap) to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap *before* attempting to run the worker. On Ubuntu 18.10+ you can `apt install bubblewrap` to install it. If you build from source you will need to first install your distro's equivalent of the `libcap-dev` package.
 
-Create a server.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:
+Create a worker.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:
 
 ```toml
 # This is where client toolchains will be stored.
@@ -76,7 +76,7 @@ cache_dir = "/tmp/toolchains"
 # A public IP address and port that clients will use to connect to this builder.
 public_addr = "192.168.1.1:10501"
 # The URL used to connect to the scheduler (should use https, given an ideal
-# setup of a HTTPS server in front of the scheduler)
+# setup of a HTTPS worker in front of the scheduler)
 scheduler_url = "https://192.168.1.1"
 
 [builder]
@@ -88,22 +88,22 @@ bwrap_path = "/usr/bin/bwrap"
 
 [scheduler_auth]
 type = "jwt_token"
-# This will be generated by the `generate-jwt-hs256-server-token` command or
+# This will be generated by the `generate-jwt-hs256-worker-token` command or
 # provided by an administrator of the cachepot cluster.
-token = "my server's token"
+token = "my worker's token"
 ```
 
-Due to `bubblewrap` requirements currently the build server *must* be run as root. Start the build server by running:
+Due to `bubblewrap` requirements currently the build worker *must* be run as root. Start the build worker by running:
 
 ```toml
-sudo cachepot-dist server --config server.conf
+sudo cachepot-dist worker --config worker.conf
 ```
 
-As with the scheduler, if the build server fails to start you may need to set `RUST_LOG=trace` to get useful diagnostics. (or to get less noisy logs: `RUST_LOG=cachepot=trace,cachepot-dist=trace` ).
+As with the scheduler, if the build worker fails to start you may need to set `RUST_LOG=trace` to get useful diagnostics. (or to get less noisy logs: `RUST_LOG=cachepot=trace,cachepot-dist=trace` ).
 
 ## Configure a client
 
-A client uses `cachepot` to wrap compile commands, communicates with the scheduler to find available build servers, and communicates with build servers to execute the compiles and receive the results.
+A client uses `cachepot` to wrap compile commands, communicates with the scheduler to find available build workers, and communicates with build workers to execute the compiles and receive the results.
 
 Clients that are not targeting linux64 require the `icecc-create-env` script or should be provided with an archive. `icecc-create-env` is part of `icecream` for packaging toolchains. You can install icecream to get this script (`apt install icecc` on Ubuntu), or download it from the git repository and place it in your `PATH`: `curl https://raw.githubusercontent.com/icecc/icecream/master/client/icecc-create-env.in > icecc-create-env && chmod +x icecc-create-env`. See [using custom toolchains](#using-custom-toolchains).
 
@@ -112,10 +112,10 @@ Create a client config file in `~/.config/cachepot/config` (on Linux), `~/Librar
 ```toml
 [dist]
 # The URL used to connect to the scheduler (should use https, given an ideal
-# setup of a HTTPS server in front of the scheduler)
+# setup of a HTTPS worker in front of the scheduler)
 scheduler_url = "https://192.168.1.1"
 # Used for mapping local toolchains to remote cross-compile toolchains. Empty in
-# this example where the client and build server are both Linux.
+# this example where the client and build worker are both Linux.
 toolchains = []
 # Size of the local toolchain cache, in bytes (5GB here, 10GB if unspecified).
 toolchain_cache_size = 5368709120
@@ -126,7 +126,7 @@ type = "token"
 token = "my client token"
 ```
 
-Clients using Mozilla build servers should configure their `dist.auth` section as follows:
+Clients using Mozilla build workers should configure their `dist.auth` section as follows:
 
 ```toml
 [dist.auth]
@@ -137,17 +137,17 @@ And retrieve a token from the Mozilla identity service by running `cachepot --di
 and following the instructions. Completing this process will retrieve and cache a token
 valid for 7 days.
 
-Make sure to run `cachepot --stop-server` and `cachepot --start-server` if cachepot was
+Make sure to run `cachepot --stop-coordinator` and `cachepot --start-coordinator` if cachepot was
 running before changing the configuration.
 
 You can check the status with `cachepot --dist-status`, it should say something like:
 
-```toml
+```sh
 $ cachepot --dist-status
-{"SchedulerStatus":["https://cachepot1.corpdmz.ber3.mozilla.com/",{"num_servers":3,"num_cpus":56,"in_progress":24}]}
+{"SchedulerStatus":["https://cachepot1.corpdmz.ber3.mozilla.com/",{"num_workers":3,"num_cpus":56,"in_progress":24}]}
 ```
 
-For diagnostics, advice for scheduler/server does not work with `RUSTC_WRAPPER`. Therefore following approach is advised: `CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build`.
+For diagnostics, advice for scheduler/worker does not work with `RUSTC_WRAPPER`. Therefore following approach is advised: `CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build`.
 
 ### Using custom toolchains
 
@@ -213,21 +213,21 @@ may be required:
 - Some cross compilers may not understand some intrinsics used in more recent macOS
   SDKs. The 10.11 SDK is known to work.
 
-## Making a build server start at boot time
+## Making a build worker start at boot time
 
-It is very easy with a systemd service to spawn the server on boot.
+It is very easy with a systemd service to spawn the worker on boot.
 
-You can create a service file like `/etc/systemd/system/cachepot-server.service`
+You can create a service file like `/etc/systemd/system/cachepot-worker.service`
 with the following contents:
 
 ```toml
 [Unit]
-Description=cachepot-dist server
+Description=cachepot-dist worker
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/path/to/cachepot-dist server --config /path/to/server.conf
+ExecStart=/path/to/cachepot-dist worker --config /path/to/worker.conf
 
 [Install]
 WantedBy=multi-user.target
@@ -237,8 +237,8 @@ WantedBy=multi-user.target
 you're in a distro with SELinux enabled (like Fedora), you may need to use an
 `ExecStart` line like:
 
-```toml
-ExecStart=/bin/bash -c "/home/<user>/path/to/cachepot-dist server --config /home/<user>/path/to/server.conf"
+```sh
+ExecStart=/bin/bash -c "/home/<user>/path/to/cachepot-dist worker --config /home/<user>/path/to/worker.conf"
 ```
 
 This is because SELinux by default prevents services from running binaries in
@@ -251,7 +251,7 @@ like:
 
 ```sh
 systemctl daemon-reload
-systemctl start cachepot-server
+systemctl start cachepot-worker
 systemctl status # And check it's fine.
-systemctl enable cachepot-server # This enables the service on boot
+systemctl enable cachepot-worker # This enables the service on boot
 ```
