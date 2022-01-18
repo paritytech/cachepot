@@ -146,7 +146,7 @@ fn cachepot_scheduler_cfg() -> cachepot::config::scheduler::Config {
     cachepot::config::scheduler::Config {
         public_addr: HTTPUrl::from_str(&format!("http://0.0.0.0:{}", SCHEDULER_PORT)).unwrap(),
         client_auth: cachepot::config::scheduler::ClientAuth::Insecure,
-        server_auth: cachepot::config::scheduler::WorkerAuth::Token {
+        worker_auth: cachepot::config::scheduler::WorkerAuth::Token {
             token: DIST_WORKER_TOKEN.to_owned(),
         },
     }
@@ -178,8 +178,8 @@ fn cachepot_server_cfg(
 // TODO: this is copied from the cachepot-dist binary - it's not clear where would be a better place to put the
 // code so that it can be included here
 #[cfg(feature = "dist-worker")]
-fn create_server_token(server_id: WorkerUrl, auth_token: &str) -> String {
-    format!("{} {}", server_id, auth_token)
+fn create_server_token(worker_url: WorkerUrl, auth_token: &str) -> String {
+    format!("{} {}", worker_url, auth_token)
 }
 
 #[cfg(feature = "dist-worker")]

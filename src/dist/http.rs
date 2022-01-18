@@ -109,7 +109,7 @@ mod common {
                     job_alloc,
                     need_toolchain,
                 } => {
-                    if let Some((digest, _)) = certs.get(&job_alloc.server_id) {
+                    if let Some((digest, _)) = certs.get(&job_alloc.worker_url) {
                         AllocJobHttpResponse::Success {
                             job_alloc,
                             need_toolchain,
@@ -117,7 +117,7 @@ mod common {
                         }
                     } else {
                         AllocJobHttpResponse::Fail {
-                            msg: format!("missing certificates for server {}", job_alloc.server_id),
+                            msg: format!("missing certificates for server {}", job_alloc.worker_url),
                         }
                     }
                 }
@@ -138,7 +138,7 @@ mod common {
     pub struct HeartbeatWorkerHttpRequest {
         pub jwt_key: Vec<u8>,
         pub num_cpus: usize,
-        pub server_nonce: dist::WorkerNonce,
+        pub worker_nonce: dist::WorkerNonce,
         pub cert_digest: Vec<u8>,
         pub cert_pem: Vec<u8>,
     }
@@ -148,11 +148,11 @@ mod common {
             let HeartbeatWorkerHttpRequest {
                 jwt_key,
                 num_cpus,
-                server_nonce,
+                worker_nonce,
                 cert_digest,
                 cert_pem,
             } = self;
-            write!(f, "HeartbeatServerHttpRequest {{ jwt_key: {:?}, num_cpus: {:?}, server_nonce: {:?}, cert_digest: {:?}, cert_pem: [...{} bytes...] }}", jwt_key, num_cpus, server_nonce, cert_digest, cert_pem.len())
+            write!(f, "HeartbeatServerHttpRequest {{ jwt_key: {:?}, num_cpus: {:?}, worker_nonce: {:?}, cert_digest: {:?}, cert_pem: [...{} bytes...] }}", jwt_key, num_cpus, worker_nonce, cert_digest, cert_pem.len())
         }
     }
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -174,12 +174,12 @@ pub mod urls {
     }
     pub fn scheduler_server_certificate(
         scheduler_url: &reqwest::Url,
-        server_id: WorkerUrl,
+        worker_url: WorkerUrl,
     ) -> reqwest::Url {
         scheduler_url
             .join(&format!(
                 "/api/v1/scheduler/server_certificate/{}",
-                server_id
+                worker_url
             ))
             .expect("failed to create server certificate url")
     }
@@ -199,23 +199,23 @@ pub mod urls {
             .expect("failed to create alloc job url")
     }
 
-    pub fn server_assign_job(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
+    pub fn server_assign_job(worker_url: WorkerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distworker/assign_job/{}",
-            server_id, job_id
+            worker_url, job_id
         );
         warn!("URL {}", url);
         reqwest::Url::parse(&url).expect("failed to create assign job url")
     }
-    pub fn server_submit_toolchain(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
+    pub fn server_submit_toolchain(worker_url: WorkerUrl, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distworker/submit_toolchain/{}",
-            server_id, job_id
+            worker_url, job_id
         );
         reqwest::Url::parse(&url).expect("failed to create submit toolchain url")
     }
-    pub fn server_run_job(server_id: WorkerUrl, job_id: JobId) -> reqwest::Url {
-        let url = format!("https://{}/api/v1/distworker/run_job/{}", server_id, job_id);
+    pub fn server_run_job(worker_url: WorkerUrl, job_id: JobId) -> reqwest::Url {
+        let url = format!("https://{}/api/v1/distworker/run_job/{}", worker_url, job_id);
         reqwest::Url::parse(&url).expect("failed to create run job url")
     }
 }
@@ -1009,7 +1009,7 @@ mod worker {
                     .and_then(prepare_response)
             }
 
-            // GET /api/v1/scheduler/server_certificate/{server_id: ServerId})
+            // GET /api/v1/scheduler/server_certificate/{worker_url: ServerId})
             fn server_certificate(
                 certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -1190,7 +1190,7 @@ mod worker {
                     .ok_or(Error::NoAuthorizationHeader)?;
 
                 match check_worker_auth(&bearer_http_auth(auth_header)?) {
-                    Some(server_id) => {
+                    Some(worker_url) => {
                         let origin_ip = if let Some(header_val) = headers.get("X-Real-IP") {
                             trace!("X-Real-IP: {:?}", header_val);
                             match header_val.to_str().unwrap().parse() {
@@ -1207,7 +1207,7 @@ mod worker {
                             remote.unwrap().ip()
                         };
 
-                        let url = server_id.0.to_url();
+                        let url = worker_url.0.to_url();
 
                         let addrs = url.socket_addrs(|| None).unwrap_or_default();
                         if addrs.iter().find(|addr| addr.ip() == origin_ip).is_none() {
@@ -1217,7 +1217,7 @@ mod worker {
                                 Error::InvalidBearerTokenMismatchedAddress,
                             ))
                         } else {
-                            Ok(server_id)
+                            Ok(worker_url)
                         }
                     }
                     None => Err(warp::reject::custom(Error::InvalidBearerToken)),
@@ -1276,12 +1276,12 @@ mod worker {
             }
 
             pub async fn server_certificate(
-                server_id: config::WorkerUrl,
+                worker_url: config::WorkerUrl,
                 certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
             ) -> Result<WorkerCertificateHttpResponse, Rejection> {
                 let certs = certificates.lock().await;
 
-                let (cert_digest, cert_pem) = certs.get(&server_id).cloned().unwrap();
+                let (cert_digest, cert_pem) = certs.get(&worker_url).cloned().unwrap();
                 let res = WorkerCertificateHttpResponse {
                     cert_digest,
                     cert_pem,
@@ -1291,7 +1291,7 @@ mod worker {
             }
 
             pub async fn heartbeat_server(
-                server_id: config::WorkerUrl,
+                worker_url: config::WorkerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 heartbeat_server: HeartbeatWorkerHttpRequest,
                 server_certificates: Arc<Mutex<HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>>>,
@@ -1300,7 +1300,7 @@ mod worker {
                 let HeartbeatWorkerHttpRequest {
                     num_cpus,
                     jwt_key,
-                    server_nonce,
+                    worker_nonce,
                     cert_digest,
                     cert_pem,
                 } = heartbeat_server;
@@ -1310,7 +1310,7 @@ mod worker {
                 maybe_update_certs(
                     &mut *client,
                     &mut certs,
-                    server_id.clone(),
+                    worker_url.clone(),
                     cert_digest,
                     cert_pem,
                 )
@@ -1320,8 +1320,8 @@ mod worker {
                 let job_authorizer = Box::new(JWTJobAuthorizer::new(jwt_key));
                 let res: HeartbeatWorkerResult = handler
                     .handle_heartbeat_worker(
-                        server_id.clone(),
-                        server_nonce,
+                        worker_url.clone(),
+                        worker_nonce,
                         num_cpus,
                         job_authorizer,
                     )
@@ -1332,12 +1332,12 @@ mod worker {
 
             pub async fn job_state(
                 job_id: JobId,
-                server_id: config::WorkerUrl,
+                worker_url: config::WorkerUrl,
                 handler: Arc<dyn dist::SchedulerIncoming>,
                 job_state: JobState,
             ) -> Result<UpdateJobStateResult, Rejection> {
                 let res = handler
-                    .handle_update_job_state(job_id, server_id, job_state)
+                    .handle_update_job_state(job_id, worker_url, job_state)
                     .map_err(|_| Error::UpdateJobState)?;
 
                 Ok(res)
@@ -1354,16 +1354,16 @@ mod worker {
             async fn maybe_update_certs(
                 client: &mut reqwest::Client,
                 certs: &mut HashMap<config::WorkerUrl, (Vec<u8>, Vec<u8>)>,
-                server_id: config::WorkerUrl,
+                worker_url: config::WorkerUrl,
                 cert_digest: Vec<u8>,
                 cert_pem: Vec<u8>,
             ) -> Result<(), Error> {
-                if let Some((saved_cert_digest, _)) = certs.get(&server_id) {
+                if let Some((saved_cert_digest, _)) = certs.get(&worker_url) {
                     if saved_cert_digest == &cert_digest {
                         return Ok(());
                     }
                 }
-                info!("Adding new certificate for {} to scheduler", server_id);
+                info!("Adding new certificate for {} to scheduler", worker_url);
 
                 let _ = native_tls::Certificate::from_pem(&cert_pem)
                     .map_err(|_| Error::BadCertificate)?;
@@ -1377,7 +1377,7 @@ mod worker {
                 let new_client = client_builder.build().map_err(|_| Error::NoHTTPClient)?;
                 // Use the updated certificates
                 *client = new_client;
-                certs.insert(server_id, (cert_digest, cert_pem));
+                certs.insert(worker_url, (cert_digest, cert_pem));
                 Ok(())
             }
         }
@@ -1453,12 +1453,12 @@ mod worker {
     impl dist::SchedulerOutgoing for SchedulerRequester {
         async fn do_assign_job(
             &self,
-            server_id: config::WorkerUrl,
+            worker_url: config::WorkerUrl,
             job_id: JobId,
             tc: Toolchain,
             auth: String,
         ) -> Result<AssignJobResult> {
-            let url = urls::server_assign_job(server_id, job_id);
+            let url = urls::server_assign_job(worker_url, job_id);
             let req = self.client.lock().await.post(url);
             bincode_req(req.bearer_auth(auth).bincode(&tc)?)
                 .await
@@ -1477,7 +1477,7 @@ mod worker {
         // Key used to sign any requests relating to jobs
         jwt_key: Vec<u8>,
         // Randomly generated nonce to allow the scheduler to detect server restarts
-        server_nonce: WorkerNonce,
+        worker_nonce: WorkerNonce,
         handler: S,
     }
 
@@ -1492,7 +1492,7 @@ mod worker {
                 .context("failed to create HTTPS certificate for server")?;
             let mut jwt_key = vec![0; JWT_KEY_LENGTH];
             OsRng.fill_bytes(&mut jwt_key);
-            let server_nonce = WorkerNonce::new();
+            let worker_nonce = WorkerNonce::new();
 
             Ok(Self {
                 public_addr,
@@ -1502,7 +1502,7 @@ mod worker {
                 cert_pem,
                 privkey_pem,
                 jwt_key,
-                server_nonce,
+                worker_nonce,
                 handler,
             })
         }
@@ -1516,7 +1516,7 @@ mod worker {
                 cert_pem,
                 privkey_pem,
                 jwt_key,
-                server_nonce,
+                worker_nonce,
                 handler,
             } = self;
 
@@ -1525,7 +1525,7 @@ mod worker {
             let heartbeat_req = HeartbeatWorkerHttpRequest {
                 num_cpus: num_cpus::get(),
                 jwt_key: jwt_key.clone(),
-                server_nonce,
+                worker_nonce,
                 cert_digest,
                 cert_pem: cert_pem.clone(),
             };
@@ -1725,7 +1725,7 @@ mod client {
                     need_toolchain,
                     cert_digest,
                 } => {
-                    let server_id = job_alloc.server_id.clone();
+                    let worker_url = job_alloc.worker_url.clone();
                     let alloc_job_res = Ok(AllocJobResult::Success {
                         job_alloc,
                         need_toolchain,
@@ -1733,8 +1733,8 @@ mod client {
                     if server_certs.lock().await.contains_key(&cert_digest) {
                         return alloc_job_res;
                     }
-                    info!("Need to request new certificate for server {}", server_id);
-                    let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
+                    info!("Need to request new certificate for server {}", worker_url);
+                    let url = urls::scheduler_server_certificate(&scheduler_url, worker_url);
                     let req = client_async.lock().await.get(url);
                     let res: WorkerCertificateHttpResponse = bincode_req(req)
                         .await
@@ -1769,7 +1769,7 @@ mod client {
         ) -> Result<SubmitToolchainResult> {
             match self.tc_cache.get_toolchain(&tc) {
                 Ok(Some(toolchain_file)) => {
-                    let url = urls::server_submit_toolchain(job_alloc.server_id, job_alloc.job_id);
+                    let url = urls::server_submit_toolchain(job_alloc.worker_url, job_alloc.job_id);
                     let req = self.client_async.lock().await.post(url);
 
                     let _toolchain_file_exists = toolchain_file.metadata()?;
@@ -1796,7 +1796,7 @@ mod client {
             outputs: Vec<String>,
             inputs_packager: Box<dyn InputsPackager>,
         ) -> Result<(RunJobResult, PathTransformer)> {
-            let url = urls::server_run_job(job_alloc.server_id, job_alloc.job_id);
+            let url = urls::server_run_job(job_alloc.worker_url, job_alloc.job_id);
             let req = self.client_async.lock().await.post(url);
 
             let (path_transformer, compressed_body) = self

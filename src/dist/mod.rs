@@ -498,7 +498,7 @@ impl fmt::Display for OutputDataLens {
 pub struct JobAlloc {
     pub auth: String,
     pub job_id: JobId,
-    pub server_id: WorkerUrl,
+    pub worker_url: WorkerUrl,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -612,7 +612,7 @@ pub trait SchedulerOutgoing: Send + Sync {
     // To Server
     async fn do_assign_job(
         &self,
-        server_id: WorkerUrl,
+        worker_url: WorkerUrl,
         job_id: JobId,
         tc: Toolchain,
         auth: String,
@@ -649,8 +649,8 @@ pub trait SchedulerIncoming: Send + Sync {
     // From Server
     fn handle_heartbeat_worker(
         &self,
-        server_id: WorkerUrl,
-        server_nonce: WorkerNonce,
+        worker_url: WorkerUrl,
+        worker_nonce: WorkerNonce,
         num_cpus: usize,
         job_authorizer: Box<dyn JobAuthorizer>,
     ) -> ExtResult<HeartbeatWorkerResult, Error>;
@@ -658,7 +658,7 @@ pub trait SchedulerIncoming: Send + Sync {
     fn handle_update_job_state(
         &self,
         job_id: JobId,
-        server_id: WorkerUrl,
+        worker_url: WorkerUrl,
         job_state: JobState,
     ) -> ExtResult<UpdateJobStateResult, Error>;
     // From anyone

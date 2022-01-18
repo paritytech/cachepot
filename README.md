@@ -83,7 +83,7 @@ If you don't [specify otherwise](#storage-options), cachepot will use a local di
 
 cachepot works using a client-server model, where the server (which we refer to as "coordinator") runs locally on the same machine as the client. The client-server model allows the server/coordinator to be more efficient by keeping some state in memory. The cachepot command will spawn a coordinator process if one is not already running, or you can run `cachepot --start-coordinator` to start the background server process without performing any compilation.
 
-You can run `cachepot --stop-coordinator` to terminate the server. It will also terminate after (by default) 10 minutes of inactivity.
+You can run `cachepot --stop-coordinator` to terminate the coordinator. It will also terminate after (by default) 10 minutes of inactivity.
 
 Running `cachepot --show-stats` will print a summary of cache statistics.
 
@@ -168,6 +168,7 @@ cachepot defaults to using local disk storage. You can set the `CACHEPOT_DIR` en
 The default cache size is 10 gigabytes. To change this, set `CACHEPOT_CACHE_SIZE`, for example `CACHEPOT_CACHE_SIZE="1G"`.
 
 ### S3
+
 If you want to use S3 storage for the cachepot cache, you need to set the `CACHEPOT_BUCKET` environment variable to the name of the S3 bucket to use.
 
 You can use `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to set the S3 credentials.  Alternately, you can set `AWS_IAM_CREDENTIALS_URL` to a URL that returns credentials in the format supported by the [EC2 metadata service](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html#instance-metadata-security-credentials), and credentials will be fetched from that location as needed. In the absence of either of these options, credentials for the instance's IAM role will be fetched from the EC2 metadata service directly.
@@ -178,20 +179,24 @@ You can also define a prefix that will be prepended to the keys of all cache obj
 
 
 ### Redis
+
 Set `CACHEPOT_REDIS` to a [Redis](https://redis.io/) url in format `redis://[:<passwd>@]<hostname>[:port][/<db>]` to store the cache in a Redis instance. Redis can be configured as a LRU (least recently used) cache with a fixed maximum cache size. Set `maxmemory` and `maxmemory-policy` according to the [Redis documentation](https://redis.io/topics/lru-cache). The `allkeys-lru` policy which discards the *least recently accessed or modified* key fits well for the cachepot use case.
 
 Redis over TLS is supported. Use the [`rediss://`](https://www.iana.org/assignments/uri-schemes/prov/rediss) url scheme (note `rediss` vs `redis`). Append `#insecure` the the url to disable hostname verification and accept self-signed certificates (dangerous!). Note that this also disables [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication).
 
 ### Memcached
+
 Set `CACHEPOT_MEMCACHED` to a [Memcached](https://memcached.org/) url in format `tcp://<hostname>:<port> ...` to store the cache in a Memcached instance.
 
 ### Google Cloud Storage
+
 To use [Google Cloud Storage](https://cloud.google.com/storage/), you need to set the `CACHEPOT_GCS_BUCKET` environment variable to the name of the GCS bucket.
 If you're using authentication, either set `CACHEPOT_GCS_KEY_PATH` to the location of your JSON service account credentials or `CACHEPOT_GCS_CREDENTIALS_URL` with
 a URL that returns the oauth token.
 By default, CACHEPOT on GCS will be read-only. To change this, set `CACHEPOT_GCS_RW_MODE` to either `READ_ONLY` or `READ_WRITE`.
 
 ### Azure
+
 To use Azure Blob Storage, you'll need your Azure connection string and an _existing_ Blob Storage container name.  Set the `CACHEPOT_AZURE_CONNECTION_STRING`
 environment variable to your connection string, and `CACHEPOT_AZURE_BLOB_CONTAINER` to the name of the container to use.  Note that cachepot will not create
 the container for you - you'll need to do that yourself.

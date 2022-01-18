@@ -826,7 +826,7 @@ pub mod scheduler {
     pub struct Config {
         pub public_addr: HTTPUrl,
         pub client_auth: ClientAuth,
-        pub server_auth: WorkerAuth,
+        pub worker_auth: WorkerAuth,
     }
 
     pub fn from_path(conf_path: &Path) -> Result<Option<Config>> {
