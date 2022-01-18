@@ -287,7 +287,7 @@ fn test_coordinator_port_in_use() {
     let output = Command::new(&cachepot)
         .arg("--start-coordinator")
         .env(
-            "CACHEPOT_SERVER_PORT",
+            "CACHEPOT_COORDINATOR_PORT",
             listener.local_addr().unwrap().port().to_string(),
         )
         .output()
