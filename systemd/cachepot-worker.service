@@ -1,5 +1,5 @@
 [Unit]
-Description=cachepot server
+Description=cachepot worker 
 
 After=suspend.target
 After=hibernate.target
@@ -20,7 +20,7 @@ Group=root
 Environment=CACHEPOT_NO_DAEMON=1
 Environment=RUST_LOG=cachepot=trace,cachepot-dist=trace
 ExecPreStart=-/mnt/cache-dir
-ExecStart=/usr/local/bin/cachepot-dist server --config /etc/cachepot/server.conf
+ExecStart=/usr/local/bin/cachepot-dist worker --config /etc/cachepot/worker.conf
 SELinuxContext=system_u:object_r:unreserved_port_t:s0
 
 [Install]

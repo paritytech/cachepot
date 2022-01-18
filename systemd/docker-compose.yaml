@@ -1,12 +1,12 @@
 # An example setup for a distributed cachepot cluster that uses
 # - a single scheduler (172.25.0.10)
-# - a single build server (172.25.0.11)
+# - a single build worker (172.25.0.11)
 # both served from a local network.
 # To test this locally, make sure to set up `dist.scheduler_url` and `dist.auth`
 # correctly, as used by the `cachepot` binary (the "client") and verify that the
 # connection works by running `cachepot --dist-status`.
 # It's worth noting that the security is virtually none using this exact setup.
-# To correctly set everything up (e.g. set up auth across scheduler <-> server
+# To correctly set everything up (e.g. set up auth across scheduler <-> worker 
 # and client <-> scheduler, use HTTPS for the scheduler) refer to the
 # `docs/Distributed.md` file.
 version: "3.6"
@@ -21,7 +21,7 @@ services:
             CACHEPOT_NO_DAEMON: 1
             CACHEPOT_CONFIG_TOML: |
                 public_addr = "http://172.25.0.10:10600"
-                [server_auth]
+                [worker_auth]
                 type = "DANGEROUSLY_INSECURE"
                 [client_auth]
                 type = "token"
@@ -32,7 +32,7 @@ services:
             dist_network:
                 ipv4_address: 172.25.0.10
         command: /bin/sh -c "echo \"$$CACHEPOT_CONFIG_TOML\" > config.toml; cachepot-dist scheduler --config config.toml"
-    server:
+    worker:
         # XXX: For the time being, due to the usage of bubblewrap and overlayfs
         # we are required to run this in the privileged mode (as we do in the
         # integration tests). Please keep that in mind when running the container.
@@ -71,8 +71,8 @@ services:
                 ipv4_address: 172.25.0.11
         tmpfs:
             - /cachepot-dirs
-        command: /bin/sh -c "echo \"$$CACHEPOT_CONFIG_TOML\" > config.toml; cachepot-dist server --config config.toml"
-# We need to set static IPs for the services as scheduler/server always use it
+        command: /bin/sh -c "echo \"$$CACHEPOT_CONFIG_TOML\" > config.toml; cachepot-dist worker --config config.toml"
+# We need to set static IPs for the services as scheduler/worker always use it
 # to authorize themselves (even when using the DANGEROUSLY_INSECURE scheme)
 networks:
     dist_network:
