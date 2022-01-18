@@ -44,7 +44,7 @@ struct CoordinatorOptions {
 
 /// Run a server on a background thread, and return a tuple of useful things.
 ///
-/// * The port on which the server is listening.
+/// * The port on which the coordinator is listening.
 /// * A `Sender` which can be used to send messages to the server.
 ///   (Most usefully, CoordinatorMessage::Shutdown.)
 /// * An `Arc`-and-`Mutex`-wrapped `MockCommandCreator` which the server will
