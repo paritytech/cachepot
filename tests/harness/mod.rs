@@ -390,7 +390,7 @@ impl DistSystem {
         handle
     }
 
-    pub async fn add_custom_server<S: dist::CoordinatorIncoming + 'static>(
+    pub async fn add_custom_server<S: dist::WorkerIncoming + 'static>(
         &mut self,
         handler: S,
     ) -> ServerHandle {

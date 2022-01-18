@@ -13,7 +13,7 @@ use crate::harness::{
 use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{
-    AssignJobResult, CompileCommand, CoordinatorIncoming, CoordinatorOutgoing, InputsReader, JobId,
+    AssignJobResult, CompileCommand, WorkerIncoming, WorkerOutgoing, InputsReader, JobId,
     JobState, RunJobResult, SubmitToolchainResult, Toolchain, ToolchainReader,
 };
 use serial_test::serial;
@@ -165,7 +165,7 @@ async fn test_dist_nobuilder() {
 
 struct FailingServer;
 #[async_trait]
-impl CoordinatorIncoming for FailingServer {
+impl WorkerIncoming for FailingServer {
     async fn handle_assign_job(&self, _job_id: JobId, _tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = false;
         let state = JobState::Ready;
@@ -176,7 +176,7 @@ impl CoordinatorIncoming for FailingServer {
     }
     async fn handle_submit_toolchain(
         &self,
-        _requester: &dyn CoordinatorOutgoing,
+        _requester: &dyn WorkerOutgoing,
         _job_id: JobId,
         _tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
@@ -184,7 +184,7 @@ impl CoordinatorIncoming for FailingServer {
     }
     async fn handle_run_job(
         &self,
-        requester: &dyn CoordinatorOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         _command: CompileCommand,
         _outputs: Vec<String>,

@@ -483,7 +483,7 @@ mod worker {
             use crate::dist::{
                 self,
                 http::worker::{CoordinatorVisibleMsg, ErrJson},
-                CoordinatorIncoming, JobAuthorizer, JobId,
+                WorkerIncoming, JobAuthorizer, JobId,
             };
 
             fn bearer_http_auth(auth_header: &HeaderValue) -> Result<String, Error> {
@@ -527,15 +527,15 @@ mod worker {
             }
 
             fn with_requester(
-                requester: Arc<dyn dist::CoordinatorOutgoing>,
-            ) -> impl Filter<Extract = (Arc<dyn dist::CoordinatorOutgoing>,), Error = Infallible> + Clone
+                requester: Arc<dyn dist::WorkerOutgoing>,
+            ) -> impl Filter<Extract = (Arc<dyn dist::WorkerOutgoing>,), Error = Infallible> + Clone
             {
                 warp::any().map(move || requester.clone())
             }
 
             fn with_server_incoming_handler(
-                handler: Arc<dyn CoordinatorIncoming>,
-            ) -> impl Filter<Extract = (Arc<dyn CoordinatorIncoming>,), Error = Infallible> + Clone
+                handler: Arc<dyn WorkerIncoming>,
+            ) -> impl Filter<Extract = (Arc<dyn WorkerIncoming>,), Error = Infallible> + Clone
             {
                 warp::any().map(move || handler.clone())
             }
@@ -563,7 +563,7 @@ mod worker {
             fn assign_job(
                 request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn dist::JobAuthorizer>,
-                handler: Arc<dyn dist::CoordinatorIncoming>,
+                handler: Arc<dyn dist::WorkerIncoming>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 let with_request_id =
                     warp::any().map(move || request_counter.fetch_add(1, atomic::Ordering::SeqCst));
@@ -585,8 +585,8 @@ mod worker {
             fn submit_toolchain(
                 _request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                handler: Arc<dyn CoordinatorIncoming>,
-                requester: Arc<dyn dist::CoordinatorOutgoing>,
+                handler: Arc<dyn WorkerIncoming>,
+                requester: Arc<dyn dist::WorkerOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "distworker" / "submit_toolchain" / JobId)
                     .and(warp::post())
@@ -605,8 +605,8 @@ mod worker {
             fn run_job(
                 _request_counter: Arc<atomic::AtomicUsize>,
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                handler: Arc<dyn CoordinatorIncoming>,
-                requester: Arc<dyn dist::CoordinatorOutgoing>,
+                handler: Arc<dyn WorkerIncoming>,
+                requester: Arc<dyn dist::WorkerOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
                 warp::path!("api" / "v1" / "distworker" / "run_job" / JobId)
                     .and(warp::post())
@@ -623,8 +623,8 @@ mod worker {
 
             pub fn api(
                 job_authorizer: Arc<dyn JobAuthorizer>,
-                server_incoming_handler: Arc<dyn CoordinatorIncoming>,
-                requester: Arc<dyn dist::CoordinatorOutgoing>,
+                server_incoming_handler: Arc<dyn WorkerIncoming>,
+                requester: Arc<dyn dist::WorkerOutgoing>,
             ) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
                 let request_count = Arc::new(atomic::AtomicUsize::new(0));
 
@@ -745,7 +745,7 @@ mod worker {
             use crate::dist::{
                 AssignJobResult, InputsReader, RunJobResult, SubmitToolchainResult, ToolchainReader,
             };
-            use crate::dist::{CoordinatorIncoming, CoordinatorOutgoing, Toolchain};
+            use crate::dist::{WorkerIncoming, WorkerOutgoing, Toolchain};
             use byteorder::{BigEndian, ReadBytesExt};
             use flate2::read::ZlibDecoder as ZlibReadDecoder;
             use std::sync::Arc;
@@ -754,7 +754,7 @@ mod worker {
             pub async fn assign_job(
                 job_id: JobId,
                 toolchain: Toolchain,
-                handler: Arc<dyn CoordinatorIncoming>,
+                handler: Arc<dyn WorkerIncoming>,
                 _req_id: usize,
             ) -> Result<AssignJobResult, Rejection> {
                 let res = handler
@@ -767,8 +767,8 @@ mod worker {
 
             pub async fn submit_toolchain(
                 job_id: JobId,
-                handler: Arc<dyn CoordinatorIncoming>,
-                requester: Arc<dyn CoordinatorOutgoing>,
+                handler: Arc<dyn WorkerIncoming>,
+                requester: Arc<dyn WorkerOutgoing>,
                 body: bytes::Bytes,
             ) -> Result<SubmitToolchainResult, Rejection> {
                 let toolchain_rdr = ToolchainReader(Box::new(body.as_ref()));
@@ -782,8 +782,8 @@ mod worker {
 
             pub async fn run_job(
                 job_id: JobId,
-                handler: Arc<dyn CoordinatorIncoming>,
-                requester: Arc<dyn CoordinatorOutgoing>,
+                handler: Arc<dyn WorkerIncoming>,
+                requester: Arc<dyn WorkerOutgoing>,
                 body: bytes::Bytes,
             ) -> Result<RunJobResult, Rejection> {
                 use std::io::Read;
@@ -1481,7 +1481,7 @@ mod worker {
         handler: S,
     }
 
-    impl<S: dist::CoordinatorIncoming + 'static> Worker<S> {
+    impl<S: dist::WorkerIncoming + 'static> Worker<S> {
         pub fn new(
             public_addr: reqwest::Url,
             scheduler_url: reqwest::Url,
@@ -1588,7 +1588,7 @@ mod worker {
     }
 
     #[async_trait]
-    impl dist::CoordinatorOutgoing for ServerRequester {
+    impl dist::WorkerOutgoing for ServerRequester {
         async fn do_update_job_state(
             &self,
             job_id: JobId,

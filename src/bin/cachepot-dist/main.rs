@@ -11,8 +11,8 @@ use cachepot::config::{
     scheduler as scheduler_config, worker, WorkerUrl, INSECURE_DIST_CLIENT_TOKEN,
 };
 use cachepot::dist::{
-    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, CoordinatorIncoming,
-    CoordinatorOutgoing, HeartbeatWorkerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
+    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, WorkerIncoming,
+    WorkerOutgoing, HeartbeatWorkerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
     JobId, JobState, RunJobResult, SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult,
     SubmitToolchainResult, TcCache, Toolchain, ToolchainReader, UpdateJobStateResult, WorkerNonce,
 };
@@ -798,7 +798,7 @@ impl Worker {
 }
 
 #[async_trait]
-impl CoordinatorIncoming for Worker {
+impl WorkerIncoming for Worker {
     async fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self
@@ -820,7 +820,7 @@ impl CoordinatorIncoming for Worker {
     }
     async fn handle_submit_toolchain(
         &self,
-        requester: &dyn CoordinatorOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
@@ -848,7 +848,7 @@ impl CoordinatorIncoming for Worker {
     }
     async fn handle_run_job(
         &self,
-        requester: &dyn CoordinatorOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,

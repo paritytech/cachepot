@@ -621,7 +621,7 @@ pub trait SchedulerOutgoing: Send + Sync {
 
 #[cfg(feature = "dist-worker")]
 #[async_trait]
-pub trait CoordinatorOutgoing: Send + Sync {
+pub trait WorkerOutgoing: Send + Sync {
     // To Scheduler
     async fn do_update_job_state(
         &self,
@@ -667,24 +667,24 @@ pub trait SchedulerIncoming: Send + Sync {
 
 #[cfg(feature = "dist-worker")]
 #[async_trait]
-pub trait CoordinatorIncoming: Send + Sync {
+pub trait WorkerIncoming: Send + Sync {
     // From Scheduler
     async fn handle_assign_job(
         &self,
         job_id: JobId,
         tc: Toolchain,
     ) -> ExtResult<AssignJobResult, Error>;
-    // From Client
+    // From Coordinator
     async fn handle_submit_toolchain(
         &self,
-        requester: &dyn CoordinatorOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         tc_rdr: ToolchainReader<'_>,
     ) -> ExtResult<SubmitToolchainResult, Error>;
-    // From Client
+    // From Coordinator
     async fn handle_run_job(
         &self,
-        requester: &dyn CoordinatorOutgoing,
+        requester: &dyn WorkerOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,
