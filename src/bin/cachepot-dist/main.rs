@@ -692,7 +692,7 @@ impl SchedulerIncoming for Scheduler {
             _ => (),
         }
         info!("Registered new server {:?}", worker_url);
-        servers.insert(
+        workers.insert(
             worker_url,
             WorkerDetails {
                 last_seen: Instant::now(),
