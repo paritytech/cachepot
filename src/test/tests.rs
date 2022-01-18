@@ -35,7 +35,7 @@ use tokio::runtime::Runtime;
 
 /// Options for running the server in tests.
 #[derive(Default)]
-struct WorkerOptions {
+struct CoordinatorOptions {
     /// The server's idle shutdown timeout.
     idle_timeout: Option<u64>,
     /// The maximum size of the disk cache.
@@ -50,7 +50,7 @@ struct WorkerOptions {
 /// * An `Arc`-and-`Mutex`-wrapped `MockCommandCreator` which the server will
 ///   use for all process creation.
 /// * The `JoinHandle` for the server thread.
-fn run_server_thread<T>(
+fn run_coordinator_thread<T>(
     cache_dir: &Path,
     options: T,
 ) -> (
@@ -60,7 +60,7 @@ fn run_server_thread<T>(
     thread::JoinHandle<()>,
 )
 where
-    T: Into<Option<WorkerOptions>> + Send + 'static,
+    T: Into<Option<CoordinatorOptions>> + Send + 'static,
 {
     let options = options.into();
     let cache_dir = cache_dir.to_path_buf();
@@ -97,9 +97,9 @@ where
 }
 
 #[test]
-fn test_server_shutdown() {
+fn test_coordinator_shutdown() {
     let f = TestFixture::new();
-    let (port, _sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, _sender, _storage, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
     let conn = connect_to_coordinator(port).unwrap();
     // Ask it to shut down
@@ -110,12 +110,12 @@ fn test_server_shutdown() {
 
 /// The server will shutdown when requested when the idle timeout is disabled.
 #[test]
-fn test_server_shutdown_no_idle() {
+fn test_coordinator_shutdown_no_idle() {
     let f = TestFixture::new();
     // Set a ridiculously low idle timeout.
-    let (port, _sender, _storage, child) = run_server_thread(
+    let (port, _sender, _storage, child) = run_coordinator_thread(
         f.tempdir.path(),
-        WorkerOptions {
+        CoordinatorOptions {
             idle_timeout: Some(0),
             ..Default::default()
         },
@@ -127,12 +127,12 @@ fn test_server_shutdown_no_idle() {
 }
 
 #[test]
-fn test_server_idle_timeout() {
+fn test_coordinator_idle_timeout() {
     let f = TestFixture::new();
     // Set a ridiculously low idle timeout.
-    let (_port, _sender, _storage, child) = run_server_thread(
+    let (_port, _sender, _storage, child) = run_coordinator_thread(
         f.tempdir.path(),
-        WorkerOptions {
+        CoordinatorOptions {
             idle_timeout: Some(1),
             ..Default::default()
         },
@@ -147,7 +147,7 @@ fn test_server_idle_timeout() {
 #[test]
 fn test_server_stats() {
     let f = TestFixture::new();
-    let (port, sender, _storage, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, _storage, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
     let conn = connect_to_coordinator(port).unwrap();
     // Ask it for stats.
@@ -162,7 +162,7 @@ fn test_server_stats() {
 #[test]
 fn test_server_unsupported_compiler() {
     let f = TestFixture::new();
-    let (port, sender, server_creator, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, server_creator, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
     let conn = connect_to_coordinator(port).unwrap();
     {
@@ -211,7 +211,7 @@ fn test_server_unsupported_compiler() {
 fn test_server_compile() {
     let _ = env_logger::Builder::new().is_test(true).try_init();
     let f = TestFixture::new();
-    let (port, sender, server_creator, child) = run_server_thread(f.tempdir.path(), None);
+    let (port, sender, server_creator, child) = run_coordinator_thread(f.tempdir.path(), None);
     // Connect to the server.
     const PREPROCESSOR_STDOUT: &[u8] = b"preprocessor stdout";
     const PREPROCESSOR_STDERR: &[u8] = b"preprocessor stderr";
