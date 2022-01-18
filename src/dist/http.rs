@@ -117,7 +117,10 @@ mod common {
                         }
                     } else {
                         AllocJobHttpResponse::Fail {
-                            msg: format!("missing certificates for server {}", job_alloc.worker_url),
+                            msg: format!(
+                                "missing certificates for server {}",
+                                job_alloc.worker_url
+                            ),
                         }
                     }
                 }
@@ -215,7 +218,10 @@ pub mod urls {
         reqwest::Url::parse(&url).expect("failed to create submit toolchain url")
     }
     pub fn server_run_job(worker_url: WorkerUrl, job_id: JobId) -> reqwest::Url {
-        let url = format!("https://{}/api/v1/distworker/run_job/{}", worker_url, job_id);
+        let url = format!(
+            "https://{}/api/v1/distworker/run_job/{}",
+            worker_url, job_id
+        );
         reqwest::Url::parse(&url).expect("failed to create run job url")
     }
 }
