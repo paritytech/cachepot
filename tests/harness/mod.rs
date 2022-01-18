@@ -360,7 +360,7 @@ impl DistSystem {
                     r#"
                     set -o errexit &&
                     while [ ! -f {cfg}.ready ]; do sleep 0.1; done &&
-                    exec /cachepot-dist server --config {cfg}
+                    exec /cachepot-dist worker --config {cfg}
                 "#,
                     cfg = server_cfg_container_path.to_str().unwrap()
                 ),
