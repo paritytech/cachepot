@@ -483,7 +483,7 @@ mod worker {
             use crate::dist::{
                 self,
                 http::worker::{CoordinatorVisibleMsg, ErrJson},
-                WorkerIncoming, JobAuthorizer, JobId,
+                JobAuthorizer, JobId, WorkerIncoming,
             };
 
             fn bearer_http_auth(auth_header: &HeaderValue) -> Result<String, Error> {
@@ -745,7 +745,7 @@ mod worker {
             use crate::dist::{
                 AssignJobResult, InputsReader, RunJobResult, SubmitToolchainResult, ToolchainReader,
             };
-            use crate::dist::{WorkerIncoming, WorkerOutgoing, Toolchain};
+            use crate::dist::{Toolchain, WorkerIncoming, WorkerOutgoing};
             use byteorder::{BigEndian, ReadBytesExt};
             use flate2::read::ZlibDecoder as ZlibReadDecoder;
             use std::sync::Arc;

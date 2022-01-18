@@ -11,10 +11,10 @@ use cachepot::config::{
     scheduler as scheduler_config, worker, WorkerUrl, INSECURE_DIST_CLIENT_TOKEN,
 };
 use cachepot::dist::{
-    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, WorkerIncoming,
-    WorkerOutgoing, HeartbeatWorkerResult, InputsReader, JobAlloc, JobAuthorizer, JobComplete,
-    JobId, JobState, RunJobResult, SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult,
-    SubmitToolchainResult, TcCache, Toolchain, ToolchainReader, UpdateJobStateResult, WorkerNonce,
+    self, AllocJobResult, AssignJobResult, BuilderIncoming, CompileCommand, HeartbeatWorkerResult,
+    InputsReader, JobAlloc, JobAuthorizer, JobComplete, JobId, JobState, RunJobResult,
+    SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult, SubmitToolchainResult, TcCache,
+    Toolchain, ToolchainReader, UpdateJobStateResult, WorkerIncoming, WorkerNonce, WorkerOutgoing,
 };
 use cachepot::util::daemonize;
 use jsonwebtoken as jwt;

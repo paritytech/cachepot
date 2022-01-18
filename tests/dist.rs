@@ -13,8 +13,8 @@ use crate::harness::{
 use async_trait::async_trait;
 use cachepot::config::HTTPUrl;
 use cachepot::dist::{
-    AssignJobResult, CompileCommand, WorkerIncoming, WorkerOutgoing, InputsReader, JobId,
-    JobState, RunJobResult, SubmitToolchainResult, Toolchain, ToolchainReader,
+    AssignJobResult, CompileCommand, InputsReader, JobId, JobState, RunJobResult,
+    SubmitToolchainResult, Toolchain, ToolchainReader, WorkerIncoming, WorkerOutgoing,
 };
 use serial_test::serial;
 use std::ffi::OsStr;
