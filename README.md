@@ -81,7 +81,7 @@ cachepot supports gcc, clang, MSVC, rustc, NVCC, and [Wind River's diab compiler
 
 If you don't [specify otherwise](#storage-options), cachepot will use a local disk cache.
 
-cachepot works using a client-coordinator model, where the server runs locally on the same machine as the client. The client-coordinator model allows the server to be more efficient by keeping some state in memory. The cachepot command will spawn a server process if one is not already running, or you can run `cachepot --start-coordinator` to start the background server process without performing any compilation.
+cachepot works using a client-server model, where the server (which we refer to as "coordinator") runs locally on the same machine as the client. The client-server model allows the server/coordinator to be more efficient by keeping some state in memory. The cachepot command will spawn a coordinator process if one is not already running, or you can run `cachepot --start-coordinator` to start the background server process without performing any compilation.
 
 You can run `cachepot --stop-coordinator` to terminate the server. It will also terminate after (by default) 10 minutes of inactivity.
 
