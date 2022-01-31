@@ -102,9 +102,16 @@ enum AuthSubcommand {
 // Only supported on x86_64 Linux machines
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use tokio::select;
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+
     init_logging();
-    std::process::exit({
+
+    let run_fut = async move {
         let cmd = Command::from_args();
         match run(cmd).await {
             Ok(s) => s,
@@ -117,7 +124,19 @@ async fn main() {
                 2
             }
         }
-    });
+    };
+
+    // Whenever `docker` or `systemd` stop the service, the signals
+    // have to be processed and the app has to perform a graceful stop.
+    select! {
+        _ = sigint.recv() => {},
+        _ = sigterm.recv() => {},
+        res = run_fut => {
+            std::process::exit(res);
+        },
+    }
+
+    Ok(())
 }
 
 /// These correspond to the values of `log::LevelFilter`.
