@@ -126,6 +126,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Whenever `docker` or `systemd` stop the service, the signals
+    // have to be processed and the app has to perform a graceful stop.
     select! {
         _ = sigint.recv() => {},
         _ = sigterm.recv() => {},
