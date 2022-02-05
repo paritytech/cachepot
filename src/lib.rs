@@ -126,15 +126,17 @@ pub fn init_logging() {
         }
     }
 
-    let start_coordinator = env::var("CACHEPOT_START_COORDINATOR").is_ok()
-        || env::args_os().any(|a| a == "--start-coordinator");
-
     // TODO: That's a rough heuristic - share detection logic from cmdline.rs
-    let kind = match (std::env::args().nth(1).as_deref(), start_coordinator) {
-        (Some("scheduler"), _) => Kind::DistScheduler,
-        (Some("worker"), _) => Kind::DistWorker,
-        (_, true) => Kind::Coordinator,
-        _ => Kind::Client,
+    let kind = if env::var("CACHEPOT_START_COORDINATOR").is_ok()
+        || env::args_os().any(|a| a == "--start-coordinator")
+    {
+        Kind::Coordinator
+    } else {
+        match std::env::args().nth(1).as_deref() {
+            Some("scheduler") => Kind::DistScheduler,
+            Some("worker") => Kind::DistWorker,
+            _ => Kind::Client,
+        }
     };
 
     let color_for_kind = |kind| match kind {
