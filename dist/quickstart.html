@@ -140,28 +140,28 @@
 <p>This is a quick start guide to getting distributed compilation working with cachepot. This guide primarily covers Linux clients.
 macOS and Windows clients are supported but have seen significantly less testing.</p>
 <h2 id="get-cachepot-binaries"><a class="header" href="#get-cachepot-binaries">Get cachepot binaries</a></h2>
-<p>Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the <code>dist-client</code> and <code>dist-server</code> features enabled:</p>
-<pre><code class="language-sh">cargo build --release --features=&quot;dist-client dist-server&quot;
+<p>Either download pre-built cachepot binaries (not currently available), or build cachepot locally with the <code>dist-client</code> and <code>dist-worker</code> features enabled:</p>
+<pre><code class="language-sh">cargo build --release --features=&quot;dist-client dist-worker&quot;
 </code></pre>
-<p>The <code>target/release/cachepot</code> binary will be used on the client, and the <code>target/release/cachepot-dist</code> binary will be used on the scheduler and build server.</p>
+<p>The <code>target/release/cachepot</code> binary will be used on the client, and the <code>target/release/cachepot-dist</code> binary will be used on the scheduler and build worker.</p>
 <p>If you're only planning to use the client, it is enabled by default, so just <code>cargo install cachepot</code> should do the trick.</p>
 <h2 id="configure-a-scheduler"><a class="header" href="#configure-a-scheduler">Configure a scheduler</a></h2>
-<p>If you're adding a server to a cluster that has already be set up, skip ahead to <a href="#configure-a-build-server">configuring a build server</a>.</p>
-<p>The scheduler is a daemon that manages compile request from clients and parcels them out to build servers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.</p>
-<p>Create a scheduler.conf file to configure client/server authentication. A minimal example looks like:</p>
+<p>If you're adding a worker to a cluster that has already be set up, skip ahead to <a href="#configure-a-build-coordinator">configuring a build worker</a>.</p>
+<p>The scheduler is a daemon that manages compile request from clients and parcels them out to build workers. You only need one of these per cachepot setup. Currently only Linux is supported for running the scheduler.</p>
+<p>Create a scheduler.conf file to configure client/worker authentication. A minimal example looks like:</p>
 <pre><code class="language-toml"># The socket address the scheduler will listen on. It's strongly recommended
-# to listen on localhost and put a HTTPS server in front of it.
+# to listen on localhost and put a HTTPS worker in front of it.
 public_addr = &quot;127.0.0.1:10600&quot;
 
 [client_auth]
 type = &quot;token&quot;
 token = &quot;my client token&quot;
 
-[server_auth]
+[worker_auth]
 type = &quot;jwt_hs256&quot;
 secret_key = &quot;my secret key&quot;
 </code></pre>
-<p>Mozilla build servers will typically require clients to be authenticated with the
+<p>Mozilla build workers will typically require clients to be authenticated with the
 <a href="https://github.com/mozilla-iam/mozilla-iam">Mozilla identity system</a>.</p>
 <p>To configure for scheduler for this, the <code>client_auth</code> section should be as follows
 so any client tokens are validated with the Mozilla service:</p>
@@ -173,11 +173,11 @@ required_groups = [&quot;group_name&quot;]
 <p>Start the scheduler by running:</p>
 <pre><code class="language-sh">cachepot-dist scheduler --config scheduler.conf
 </code></pre>
-<p>Like the local server, the scheduler process will daemonize itself unless <code>CACHEPOT_NO_DAEMON=1</code> is set. If the scheduler fails to start you may need to set <code>RUST_LOG=trace</code> when starting it to get useful diagnostics (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
-<h3 id="configure-a-build-server"><a class="header" href="#configure-a-build-server">Configure a build server</a></h3>
-<p>A build server communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build server, but executing cross-compile requests from macOS/Windows clients is supported.</p>
-<p>The build server requires <a href="https://github.com/projectatomic/bubblewrap">bubblewrap</a> to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap <em>before</em> attempting to run the server. On Ubuntu 18.10+ you can <code>apt install bubblewrap</code> to install it. If you build from source you will need to first install your distro's equivalent of the <code>libcap-dev</code> package.</p>
-<p>Create a server.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:</p>
+<p>Like the local worker, the scheduler process will daemonize itself unless <code>CACHEPOT_NO_DAEMON=1</code> is set. If the scheduler fails to start you may need to set <code>RUST_LOG=trace</code> when starting it to get useful diagnostics (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<h3 id="configure-a-build-worker"><a class="header" href="#configure-a-build-worker">Configure a build worker</a></h3>
+<p>A build worker communicates with the scheduler and executes compiles requested by clients. Only Linux is supported for running a build worker, but executing cross-compile requests from macOS/Windows clients is supported.</p>
+<p>The build worker requires <a href="https://github.com/projectatomic/bubblewrap">bubblewrap</a> to sandbox execution, at least version 0.3.0. Verify your version of bubblewrap <em>before</em> attempting to run the worker. On Ubuntu 18.10+ you can <code>apt install bubblewrap</code> to install it. If you build from source you will need to first install your distro's equivalent of the <code>libcap-dev</code> package.</p>
+<p>Create a worker.conf file to configure authentication, storage locations, network addresses and the path to bubblewrap. A minimal example looks like:</p>
 <pre><code class="language-toml"># This is where client toolchains will be stored.
 cache_dir = &quot;/tmp/toolchains&quot;
 # The maximum size of the toolchain cache, in bytes.
@@ -186,7 +186,7 @@ cache_dir = &quot;/tmp/toolchains&quot;
 # A public IP address and port that clients will use to connect to this builder.
 public_addr = &quot;192.168.1.1:10501&quot;
 # The URL used to connect to the scheduler (should use https, given an ideal
-# setup of a HTTPS server in front of the scheduler)
+# setup of a HTTPS worker in front of the scheduler)
 scheduler_url = &quot;https://192.168.1.1&quot;
 
 [builder]
@@ -198,24 +198,24 @@ bwrap_path = &quot;/usr/bin/bwrap&quot;
 
 [scheduler_auth]
 type = &quot;jwt_token&quot;
-# This will be generated by the `generate-jwt-hs256-server-token` command or
+# This will be generated by the `generate-jwt-hs256-worker-token` command or
 # provided by an administrator of the cachepot cluster.
-token = &quot;my server's token&quot;
+token = &quot;my worker's token&quot;
 </code></pre>
-<p>Due to <code>bubblewrap</code> requirements currently the build server <em>must</em> be run as root. Start the build server by running:</p>
-<pre><code class="language-toml">sudo cachepot-dist server --config server.conf
+<p>Due to <code>bubblewrap</code> requirements currently the build worker <em>must</em> be run as root. Start the build worker by running:</p>
+<pre><code class="language-toml">sudo cachepot-dist worker --config worker.conf
 </code></pre>
-<p>As with the scheduler, if the build server fails to start you may need to set <code>RUST_LOG=trace</code> to get useful diagnostics. (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
+<p>As with the scheduler, if the build worker fails to start you may need to set <code>RUST_LOG=trace</code> to get useful diagnostics. (or to get less noisy logs: <code>RUST_LOG=cachepot=trace,cachepot-dist=trace</code> ).</p>
 <h2 id="configure-a-client"><a class="header" href="#configure-a-client">Configure a client</a></h2>
-<p>A client uses <code>cachepot</code> to wrap compile commands, communicates with the scheduler to find available build servers, and communicates with build servers to execute the compiles and receive the results.</p>
+<p>A client uses <code>cachepot</code> to wrap compile commands, communicates with the scheduler to find available build workers, and communicates with build workers to execute the compiles and receive the results.</p>
 <p>Clients that are not targeting linux64 require the <code>icecc-create-env</code> script or should be provided with an archive. <code>icecc-create-env</code> is part of <code>icecream</code> for packaging toolchains. You can install icecream to get this script (<code>apt install icecc</code> on Ubuntu), or download it from the git repository and place it in your <code>PATH</code>: <code>curl https://raw.githubusercontent.com/icecc/icecream/master/client/icecc-create-env.in &gt; icecc-create-env &amp;&amp; chmod +x icecc-create-env</code>. See <a href="#using-custom-toolchains">using custom toolchains</a>.</p>
 <p>Create a client config file in <code>~/.config/cachepot/config</code> (on Linux), <code>~/Library/Application Support/Parity.cachepot/config</code> (on macOS), or <code>%APPDATA%\Parity\cachepot\config\config</code> (on Windows). A minimal example looks like:</p>
 <pre><code class="language-toml">[dist]
 # The URL used to connect to the scheduler (should use https, given an ideal
-# setup of a HTTPS server in front of the scheduler)
+# setup of a HTTPS worker in front of the scheduler)
 scheduler_url = &quot;https://192.168.1.1&quot;
 # Used for mapping local toolchains to remote cross-compile toolchains. Empty in
-# this example where the client and build server are both Linux.
+# this example where the client and build worker are both Linux.
 toolchains = []
 # Size of the local toolchain cache, in bytes (5GB here, 10GB if unspecified).
 toolchain_cache_size = 5368709120
@@ -225,20 +225,20 @@ type = &quot;token&quot;
 # This should match the `client_auth` section of the scheduler config.
 token = &quot;my client token&quot;
 </code></pre>
-<p>Clients using Mozilla build servers should configure their <code>dist.auth</code> section as follows:</p>
+<p>Clients using Mozilla build workers should configure their <code>dist.auth</code> section as follows:</p>
 <pre><code class="language-toml">[dist.auth]
 type = &quot;mozilla&quot;
 </code></pre>
 <p>And retrieve a token from the Mozilla identity service by running <code>cachepot --dist-auth</code>
 and following the instructions. Completing this process will retrieve and cache a token
 valid for 7 days.</p>
-<p>Make sure to run <code>cachepot --stop-server</code> and <code>cachepot --start-server</code> if cachepot was
+<p>Make sure to run <code>cachepot --stop-coordinator</code> and <code>cachepot --start-coordinator</code> if cachepot was
 running before changing the configuration.</p>
 <p>You can check the status with <code>cachepot --dist-status</code>, it should say something like:</p>
-<pre><code class="language-toml">$ cachepot --dist-status
-{&quot;SchedulerStatus&quot;:[&quot;https://cachepot1.corpdmz.ber3.mozilla.com/&quot;,{&quot;num_servers&quot;:3,&quot;num_cpus&quot;:56,&quot;in_progress&quot;:24}]}
+<pre><code class="language-sh">$ cachepot --dist-status
+{&quot;SchedulerStatus&quot;:[&quot;https://cachepot1.corpdmz.ber3.mozilla.com/&quot;,{&quot;num_workers&quot;:3,&quot;num_cpus&quot;:56,&quot;in_progress&quot;:24}]}
 </code></pre>
-<p>For diagnostics, advice for scheduler/server does not work with <code>RUSTC_WRAPPER</code>. Therefore following approach is advised: <code>CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build</code>.</p>
+<p>For diagnostics, advice for scheduler/worker does not work with <code>RUSTC_WRAPPER</code>. Therefore following approach is advised: <code>CACHEPOT_LOG=trace RUSTC_WRAPPER=... cargo build</code>.</p>
 <h3 id="using-custom-toolchains"><a class="header" href="#using-custom-toolchains">Using custom toolchains</a></h3>
 <p>Since Windows and macOS cannot automatically package toolchains, it is important to be
 able to manually specify toolchains for distribution. This functionality is also available
@@ -292,17 +292,17 @@ not <code>~/.config/cachepot/config</code>.</li>
 <li>Some cross compilers may not understand some intrinsics used in more recent macOS
 SDKs. The 10.11 SDK is known to work.</li>
 </ul>
-<h2 id="making-a-build-server-start-at-boot-time"><a class="header" href="#making-a-build-server-start-at-boot-time">Making a build server start at boot time</a></h2>
-<p>It is very easy with a systemd service to spawn the server on boot.</p>
-<p>You can create a service file like <code>/etc/systemd/system/cachepot-server.service</code>
+<h2 id="making-a-build-worker-start-at-boot-time"><a class="header" href="#making-a-build-worker-start-at-boot-time">Making a build worker start at boot time</a></h2>
+<p>It is very easy with a systemd service to spawn the worker on boot.</p>
+<p>You can create a service file like <code>/etc/systemd/system/cachepot-worker.service</code>
 with the following contents:</p>
 <pre><code class="language-toml">[Unit]
-Description=cachepot-dist server
+Description=cachepot-dist worker
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/path/to/cachepot-dist server --config /path/to/server.conf
+ExecStart=/path/to/cachepot-dist worker --config /path/to/worker.conf
 
 [Install]
 WantedBy=multi-user.target
@@ -310,7 +310,7 @@ WantedBy=multi-user.target
 <p><strong>Note</strong> that if the <code>cachepot-dist</code> binary is in a user's home directory, and
 you're in a distro with SELinux enabled (like Fedora), you may need to use an
 <code>ExecStart</code> line like:</p>
-<pre><code class="language-toml">ExecStart=/bin/bash -c &quot;/home/&lt;user&gt;/path/to/cachepot-dist server --config /home/&lt;user&gt;/path/to/server.conf&quot;
+<pre><code class="language-sh">ExecStart=/bin/bash -c &quot;/home/&lt;user&gt;/path/to/cachepot-dist worker --config /home/&lt;user&gt;/path/to/worker.conf&quot;
 </code></pre>
 <p>This is because SELinux by default prevents services from running binaries in
 home directories, for some reason. Using a shell works around that. An
@@ -319,9 +319,9 @@ alternative would be to move the <code>cachepot-dist</code> binary to somewhere 
 <p>After creating that file, you can ensure it's working and enable it by default
 like:</p>
 <pre><code class="language-sh">systemctl daemon-reload
-systemctl start cachepot-server
+systemctl start cachepot-worker
 systemctl status # And check it's fine.
-systemctl enable cachepot-server # This enables the service on boot
+systemctl enable cachepot-worker # This enables the service on boot
 </code></pre>
 
                     </main>

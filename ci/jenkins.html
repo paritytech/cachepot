@@ -148,7 +148,7 @@ to <code>0</code> and start the server beside Jenkins as a system service. This 
 configuration and share the statistics.</p>
 <p>If a per-jobs cachepot configuration is needed or preferred (e.g place a local disc cache in <code>$WORKSPACE</code>) the Port
 allocator plugin does a good job. It assigns a free and
-unique port number to a job by exporting a variable. Naming this variable <code>CACHEPOT_SERVER_PORT</code> is enough to make the
+unique port number to a job by exporting a variable. Naming this variable <code>CACHEPOT_COORDINATOR_PORT</code> is enough to make the
 job spawn it's own cachepot server that is save to terminate upon job termination. This approach has the advantage that
 each job (with a dedicated server instance) maintains it's own statistics that might be interesting upon job
 finalization.</p>
