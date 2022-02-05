@@ -22,10 +22,11 @@ use cachepot::util::fs;
 use flate2::read::GzDecoder;
 use libmount::Overlay;
 use std::collections::{hash_map, HashMap};
-use std::io;
+use std::io::{self, Cursor};
 use std::iter;
+use std::os::unix::net::UnixStream;
 use std::path::{self, Path, PathBuf};
-use std::process::{ChildStdin, Command, Output, Stdio};
+use std::process::{ChildStdin, Command, ExitStatus, Output, Stdio};
 use std::sync::Mutex;
 use std::time::Instant;
 use version_compare::Version;
@@ -110,10 +111,7 @@ impl OverlayBuilder {
     pub fn new(bubblewrap: PathBuf, dir: PathBuf) -> Result<Self> {
         info!("Creating overlay builder");
 
-        if !nix::unistd::getuid().is_root() || !nix::unistd::geteuid().is_root() {
-            // Not root, or a setuid binary - haven't put enough thought into supporting this, bail
-            bail!("not running as root")
-        }
+        // TODO: Check kernel support for user namespaces
 
         let out = Command::new(&bubblewrap)
             .arg("--version")
@@ -265,6 +263,8 @@ impl OverlayBuilder {
         output_paths: Vec<String>,
         overlay: &OverlaySpec,
     ) -> Result<BuildResult> {
+        use std::io::{Read, Write};
+
         trace!("Compile environment: {:?}", compile_command.env_vars);
         trace!(
             "Compile command: {:?} {:?}",
@@ -272,21 +272,95 @@ impl OverlayBuilder {
             compile_command.arguments
         );
 
-        crossbeam_utils::thread::scope(|scope| {
-            scope
-                .spawn(|_| {
+        #[derive(Serialize, Deserialize)]
+        struct CompressedFile {
+            path: String,
+            buf: Vec<u8>,
+        }
+        type CompressedOutputs = Vec<CompressedFile>;
+
+        let CompileCommand {
+            executable,
+            arguments,
+            env_vars,
+            cwd,
+        } = compile_command;
+        let cwd = Path::new(&cwd);
+
+        let work_dir = overlay.build_dir.join("work");
+        let upper_dir = overlay.build_dir.join("upper");
+        let target_dir = overlay.build_dir.join("target");
+
+        fs::create_dir(&work_dir).context("Failed to create overlay work directory")?;
+        fs::create_dir(&upper_dir).context("Failed to create overlay upper directory")?;
+        fs::create_dir(&target_dir).context("Failed to create overlay target directory")?;
+
+        //
+        let mut stdout_pipe = UnixStream::pair()?;
+        let mut stderr_pipe = UnixStream::pair()?;
+        let mut compressed_outputs_pipe = UnixStream::pair()?;
+
+        // SAFETY: Unfortunately, this is *NOT* safe, since we don't only call
+        // `async-signal-safe` [1] syscalls in the child process (most notably
+        // this includes memory allocation). However, it's good enough for a
+        // proof of concept for rootless build sandbox using user namespaces.
+        // The reason why we need to fork in the first place is that creating
+        // a new user namespace with `CLONE_NEWUSER` is required to be called
+        // from a main thread, which fork() separates the calling thread as one.
+        // FIXME: Redesign this binary to be re-executable like
+        // `cachepot-dist sandbox` (akin to server/scheduler), which would enter
+        // the child namespace in the init function, passing the outputs via
+        // shared pipes or a shared tempdir.
+        // [1]: https://man7.org/linux/man-pages/man7/signal-safety.7.html
+        let pid = match unsafe { nix::unistd::fork() }.unwrap() {
+            nix::unistd::ForkResult::Parent { child } => {
+                drop(stdout_pipe.1);
+                drop(stderr_pipe.1);
+                drop(compressed_outputs_pipe.1);
+
+                child
+            }
+            nix::unistd::ForkResult::Child => {
+                drop(stdout_pipe.0);
+                drop(stderr_pipe.0);
+                drop(compressed_outputs_pipe.0);
+
+                // We need to catch these here errors so they *DON'T* escape to
+                // the forked parent's context.
+                // Forking is a Bad Idea^TM anyway, see note above.
+                let do_work = move || -> Result<ExitStatus> {
+                    // Fetch uid/gid of the parent namespace user in order to
+                    // subsequently map to it in the child user namespace
+                    let uid = nix::unistd::Uid::current();
+                    let gid = nix::unistd::Uid::current();
+
+                    // We must call this from a main thread, hence why we forked
+                    // in the first place.
+                    nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWUSER)
+                        .context("Failed to enter a new user namespace")?;
+
                     // Now mounted filesystems will be automatically unmounted when this thread dies
                     // (and tmpfs filesystems will be completely destroyed)
                     nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS)
                         .context("Failed to enter a new Linux namespace")?;
+
+                    // Equivalent of `unshare --map-current-user` - we need that
+                    // to mount overlayfs and access files owned by the parent
+                    // namespace user
+                    std::fs::write("/proc/self/uid_map", format!("{} {} 1", uid, uid))
+                        .context("Failed writing to uid_map")?;
+                    std::fs::write("/proc/self/setgroups", "deny")
+                        .context("Failed writing to setgroups")?;
+                    // FIXME: Uncomment me
+                    std::fs::write("/proc/self/gid_map", format!("{} {} 1", gid, gid))
+                        .context("Failed writing to gid_map")?;
+
                     // Make sure that all future mount changes are private to this namespace
-                    // TODO: shouldn't need to add these annotations
-                    let source: Option<&str> = None;
+                    // Equivalent of `unshare --propagation private` (when used with `--mount`)
                     let fstype: Option<&str> = None;
                     let data: Option<&str> = None;
-                    // Turn / into a 'slave', so it receives mounts from real root, but doesn't propogate back
                     nix::mount::mount(
-                        source,
+                        Some("none"),
                         "/",
                         fstype,
                         nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
@@ -294,16 +368,7 @@ impl OverlayBuilder {
                     )
                     .context("Failed to turn / into a slave")?;
 
-                    let work_dir = overlay.build_dir.join("work");
-                    let upper_dir = overlay.build_dir.join("upper");
-                    let target_dir = overlay.build_dir.join("target");
-                    fs::create_dir(&work_dir).context("Failed to create overlay work directory")?;
-                    fs::create_dir(&upper_dir)
-                        .context("Failed to create overlay upper directory")?;
-                    fs::create_dir(&target_dir)
-                        .context("Failed to create overlay target directory")?;
-
-                    let () = Overlay::writable(
+                    Overlay::writable(
                         iter::once(overlay.toolchain_dir.as_path()),
                         upper_dir,
                         work_dir,
@@ -315,18 +380,11 @@ impl OverlayBuilder {
 
                     trace!("copying in inputs");
                     // Note that we don't unpack directly into the upperdir since there overlayfs has some
-                    // special marker files that we don't want to create by accident (or malicious intent)
+                    // special marker files [1] that we don't want to create by accident (or malicious intent)
+                    // [1]: like https://www.kernel.org/doc/html/latest/filesystems/overlayfs.html#volatile-mount
                     tar::Archive::new(inputs_rdr)
                         .unpack(&target_dir)
                         .context("Failed to unpack inputs to overlay")?;
-
-                    let CompileCommand {
-                        executable,
-                        arguments,
-                        env_vars,
-                        cwd,
-                    } = compile_command;
-                    let cwd = Path::new(&cwd);
 
                     trace!("creating output directories");
                     fs::create_dir_all(join_suffix(&target_dir, cwd))
@@ -343,6 +401,7 @@ impl OverlayBuilder {
                     }
 
                     trace!("performing compile");
+                    // FIXME: Adapt the notes for the user namespaces
                     // Bubblewrap notes:
                     // - We're running as uid 0 (to do the mounts above), and so bubblewrap is run as uid 0
                     // - There's special handling in bubblewrap to compare uid and euid - of interest to us,
@@ -385,20 +444,28 @@ impl OverlayBuilder {
                     cmd.arg("--");
                     cmd.arg(executable);
                     cmd.args(arguments);
-                    let compile_output = cmd
-                        .output()
-                        .context("Failed to retrieve output from compile")?;
-                    trace!("compile_output: {:?}", compile_output);
 
-                    let mut outputs = vec![];
+                    trace!("Running bubblewrap build: {:?}", cmd);
+
+                    let output = cmd.output().context("Error running bubblewrap")?;
+                    // FIXME: Probably would be better to use some concurrent I/O here
+                    stdout_pipe.1.write_all(&output.stdout).context("stdout")?;
+                    stderr_pipe.1.write_all(&output.stderr).context("stderr")?;
+
+                    let mut outputs: CompressedOutputs = vec![];
                     trace!("retrieving {:?}", output_paths);
                     for path in output_paths {
-                        let abspath = join_suffix(&target_dir, cwd.join(&path)); // Resolve in case it's relative since we copy it from the root level
+                        // Resolve in case it's relative since we copy it from the root level
+                        let abspath = join_suffix(&target_dir, cwd.join(&path));
                         match fs::File::open(abspath) {
-                            Ok(file) => {
-                                let output = OutputData::try_from_reader(file)
-                                    .context("Failed to read output file")?;
-                                outputs.push((path, output))
+                            Ok(mut file) => {
+                                let mut contents = vec![];
+                                file.read_to_end(&mut contents)?;
+                                // Decompress on the parent side to limit I/O
+                                outputs.push(CompressedFile {
+                                    path,
+                                    buf: contents,
+                                });
                             }
                             Err(e) => {
                                 if e.kind() == io::ErrorKind::NotFound {
@@ -411,19 +478,72 @@ impl OverlayBuilder {
                             }
                         }
                     }
-                    let compile_output = ProcessOutput::try_from(compile_output)
-                        .context("Failed to convert compilation exit status")?;
-                    Ok(BuildResult {
-                        output: compile_output,
-                        outputs,
-                    })
 
-                    // Bizarrely there's no way to actually get any information from a thread::Result::Err
-                })
-                .join()
-                .unwrap_or_else(|_e| Err(anyhow!("Build thread exited unsuccessfully")))
+                    let compressed = bincode::serialize(&outputs)?;
+                    compressed_outputs_pipe
+                        .1
+                        .write_all(&compressed)
+                        .context("Error writing outputs to pipe")?;
+
+                    Ok(output.status)
+                };
+
+                match do_work() {
+                    Ok(status) if status.success() => std::process::exit(0),
+                    Ok(status) => {
+                        info!("Bubblewrap build wasn't succesful");
+                        // TODO: Use ExitStatusExt::into_raw in Rust 1.58
+                        std::process::exit(status.code().unwrap_or(1))
+                    }
+
+                    Err(e) => {
+                        warn!("Couldn't set up a build environment for bubblewrap: {}", e);
+                        std::process::exit(101)
+                    }
+                }
+            }
+        };
+
+        trace!("Waiting on child bubblewrap build with PID {}", pid);
+        use nix::sys::wait::{WaitPidFlag, WaitStatus};
+        let code = match nix::sys::wait::waitpid(pid, Some(WaitPidFlag::WSTOPPED)) {
+            Ok(WaitStatus::Exited(_, code)) => code,
+            Ok(..) => {
+                warn!("Error waiting for child build");
+                return Err(anyhow!("Error waiting for a child build"));
+            }
+            Err(e) => {
+                warn!("Error waiting for child build: {}", e);
+                return Err(e)?;
+            }
+        };
+        let mut stdout = vec![];
+        let mut stderr = vec![];
+        stdout_pipe.0.read_to_end(&mut stdout).context("stdout")?;
+        stderr_pipe.0.read_to_end(&mut stderr).context("stderr")?;
+        let mut compressed_outputs = vec![];
+        compressed_outputs_pipe
+            .0
+            .read_to_end(&mut compressed_outputs)
+            .context("Error reading compressed outputs from pipe")?;
+        let compressed_outputs: CompressedOutputs = bincode::deserialize(&compressed_outputs)?;
+        let outputs = compressed_outputs
+            .into_iter()
+            .map(|CompressedFile { path, buf }| {
+                (path, OutputData::try_from_reader(Cursor::new(buf)).unwrap())
+            })
+            .collect();
+        let compile_output = ProcessOutput {
+            code,
+            stdout,
+            stderr,
+        };
+        trace!("compile_output: {:?}", compile_output);
+
+        Ok(BuildResult {
+            output: compile_output,
+            outputs,
         })
-        .unwrap_or_else(|e| Err(anyhow!("Error joining build thread: {:?}", e)))
     }
 
     // Failing during cleanup is pretty unexpected, but we can still return the successful compile

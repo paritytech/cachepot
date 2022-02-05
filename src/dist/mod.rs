@@ -392,12 +392,12 @@ pub struct CompileCommand {
 // process::Output is not serialize so we have a custom Output type. However,
 // we cannot encode all information in here, such as Unix signals, as the other
 // end may not understand them (e.g. if it's Windows)
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessOutput {
-    code: i32,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+    pub code: i32,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
 }
 impl ProcessOutput {
     #[cfg(unix)]
@@ -452,7 +452,7 @@ impl From<ProcessOutput> for process::Output {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct OutputData(Vec<u8>, u64);
 impl OutputData {
@@ -577,6 +577,7 @@ pub enum SubmitToolchainResult {
 
 // BuildResult
 
+#[derive(Debug)]
 pub struct BuildResult {
     pub output: ProcessOutput,
     pub outputs: Vec<(String, OutputData)>,

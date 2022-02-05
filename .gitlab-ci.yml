@@ -15,7 +15,7 @@ variables:
   RUST_BACKTRACE:                  1
   # this var is changed to "-:staging" when the CI image gets rebuilt
   # read more https://github.com/paritytech/scripts/pull/244
-  CI_IMAGE:                        "paritytech/cachepot-ci:staging" # temporary override
+  CI_IMAGE:                        "paritytech/cachepot-ci:f01df56d-20211216" # temporary override
 
 workflow:
   rules:
@@ -105,6 +105,19 @@ stable-test:
   script:
     - cargo +stable build --verbose --features="${FEATURES}" || exit 1
     - cargo +stable test --workspace --verbose --features="${FEATURES}"
+
+stable-dist-test:
+  <<:                              *docker-env
+  stage:                           test
+  variables:
+    FEATURES:                      "dist-tests"
+    DIST_EXEC_STRATEGY:            "spawn"
+    CACHEPOT_LOG:                  "cachepot=trace"
+  script:
+    - uname -r
+    - cat /proc/sys/kernel/unprivileged_userns_clone
+    - cargo +stable test --no-run --verbose --no-default-features --features="${FEATURES}" test_dist_ -- --test-threads 1
+    - cargo +stable test --verbose --no-default-features --features="${FEATURES}" test_dist_ -- --test-threads 1
 
 build:
   <<:                              *docker-env
