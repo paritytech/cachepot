@@ -76,7 +76,9 @@ fn run_coordinator_process() -> Result<CoordinatorStartup> {
     trace!("run_coordinator_process");
     let tempdir = tempfile::Builder::new().prefix("cachepot").tempdir()?;
     let socket_path = tempdir.path().join("sock");
-    let runtime = Runtime::new()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
     let exe_path = env::current_exe()?;
     let workdir = exe_path.parent().expect("executable path has no parent?!");
     let _child = process::Command::new(&exe_path)
