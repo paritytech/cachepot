@@ -3,6 +3,9 @@ use cachepot::config::{HTTPUrl, WorkerUrl};
 use cachepot::coordinator::CoordinatorInfo;
 use cachepot::dist::{self, SchedulerStatusResult};
 use cachepot::util::fs;
+#[cfg(feature = "dist-worker")]
+use nix::unistd::Pid;
+use std::collections::HashMap;
 use std::env;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
@@ -34,6 +37,24 @@ const SCHEDULER_PORT: u16 = 10500;
 const SERVER_PORT: u16 = 12345; // arbitrary
 
 const TC_CACHE_SIZE: u64 = 1024 * 1024 * 1024; // 1 gig
+
+/// Whether the cachepot services created as a part of the test should be
+/// spawned as a child process directly or ran inside of a Docker container.
+/// Containerization allows for more flexibility (e.g. the running user can be
+/// root) may require some additional setup beforehand.
+enum ExecStrategy {
+    /// Cachepot services will be ran inside of a Docker container.
+    Docker,
+    /// Cachepot services will be spawned as child processes.
+    Spawn,
+}
+
+fn exec_strategy() -> ExecStrategy {
+    match env::var("DIST_EXEC_STRATEGY").as_deref() {
+        Ok("spawn") => ExecStrategy::Spawn,
+        _ => ExecStrategy::Docker,
+    }
+}
 
 pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     // Don't run this with run() because on Windows `wait_with_output`
@@ -183,6 +204,7 @@ fn create_server_token(worker_url: WorkerUrl, auth_token: &str) -> String {
 }
 
 #[cfg(feature = "dist-worker")]
+#[derive(Debug)]
 pub enum ServerHandle {
     Container {
         cid: String,
@@ -192,38 +214,58 @@ pub enum ServerHandle {
         handle: JoinHandle<()>,
         url: HTTPUrl,
     },
+    Process {
+        pid: Pid,
+        url: HTTPUrl,
+    },
 }
+
+#[cfg(feature = "dist-worker")]
+impl ServerHandle {
+    fn url(&self) -> &HTTPUrl {
+        match self {
+            ServerHandle::Container { url, .. }
+            | ServerHandle::Process { url, .. }
+            | ServerHandle::AsyncTask { url, .. } => url,
+        }
+    }
+}
+#[cfg(feature = "dist-worker")]
+pub type ServerId = usize;
 
 #[cfg(feature = "dist-worker")]
 pub struct DistSystem {
     cachepot_dist: PathBuf,
     tmpdir: PathBuf,
 
-    scheduler_name: Option<String>,
     server_names: Vec<String>,
-    server_handles: Vec<JoinHandle<()>>,
+    scheduler: Option<ServerHandle>,
+    server_handles: HashMap<ServerId, ServerHandle>,
     client: reqwest::Client,
+    servers_counter: usize,
 }
 
 #[cfg(feature = "dist-worker")]
 impl DistSystem {
     pub fn new(cachepot_dist: &Path, tmpdir: &Path) -> Self {
         // Make sure the docker image is available, building it if necessary
-        let mut child = Command::new("docker")
-            .args(&["build", "-q", "-t", DIST_IMAGE, "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(DIST_DOCKERFILE.as_bytes())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        check_output(&output);
+        if let ExecStrategy::Docker = exec_strategy() {
+            let mut child = Command::new("docker")
+                .args(&["build", "-q", "-t", DIST_IMAGE, "-"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(DIST_DOCKERFILE.as_bytes())
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            check_output(&output);
+        }
 
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
@@ -234,18 +276,17 @@ impl DistSystem {
             cachepot_dist: cachepot_dist.to_owned(),
             tmpdir,
 
-            scheduler_name: None,
+            scheduler: None,
             server_names: vec![],
-            server_handles: vec![],
+            server_handles: HashMap::default(),
             client,
+            servers_counter: 0,
         }
     }
 
     pub async fn add_scheduler(&mut self) {
         let scheduler_cfg_relpath = "scheduler-cfg.json";
         let scheduler_cfg_path = self.tmpdir.join(scheduler_cfg_relpath);
-        let scheduler_cfg_container_path =
-            Path::new(CONFIGS_CONTAINER_PATH).join(scheduler_cfg_relpath);
         let scheduler_cfg = cachepot_scheduler_cfg();
         fs::File::create(&scheduler_cfg_path)
             .unwrap()
@@ -253,45 +294,76 @@ impl DistSystem {
             .unwrap();
 
         // Create the scheduler
-        let scheduler_name = make_container_name("scheduler");
-        let output = Command::new("docker")
-            .args(&[
-                "run",
-                "--name",
-                &scheduler_name,
-                "-e",
-                "CACHEPOT_NO_DAEMON=1",
-                "-e",
-                "RUST_LOG=cachepot=trace",
-                "-e",
-                "RUST_BACKTRACE=1",
-                "-v",
-                &format!("{}:/cachepot-dist", self.cachepot_dist.to_str().unwrap()),
-                "-v",
-                &format!(
-                    "{}:{}",
-                    self.tmpdir.to_str().unwrap(),
-                    CONFIGS_CONTAINER_PATH
-                ),
-                "-d",
-                DIST_IMAGE,
-                "bash",
-                "-c",
-                &format!(
-                    r#"
-                    set -o errexit &&
-                    exec /cachepot-dist scheduler --config {cfg}
-                "#,
-                    cfg = scheduler_cfg_container_path.to_str().unwrap()
-                ),
-            ])
-            .output()
-            .unwrap();
-        self.scheduler_name = Some(scheduler_name);
+        let scheduler = if let ExecStrategy::Docker = exec_strategy() {
+            let scheduler_cfg_container_path =
+                Path::new(CONFIGS_CONTAINER_PATH).join(scheduler_cfg_relpath);
+            let scheduler_name = make_container_name("scheduler");
+            let output = Command::new("docker")
+                .args(&[
+                    "run",
+                    "--name",
+                    &scheduler_name,
+                    "-e",
+                    "CACHEPOT_NO_DAEMON=1",
+                    "-e",
+                    "RUST_LOG=cachepot=trace",
+                    "-e",
+                    "CACHEPOT_LOG=trace",
+                    "-e",
+                    "RUST_BACKTRACE=1",
+                    "-v",
+                    &format!("{}:/cachepot-dist", self.cachepot_dist.to_str().unwrap()),
+                    "-v",
+                    &format!(
+                        "{}:{}",
+                        self.tmpdir.to_str().unwrap(),
+                        CONFIGS_CONTAINER_PATH
+                    ),
+                    "-d",
+                    DIST_IMAGE,
+                    "bash",
+                    "-c",
+                    &format!(
+                        r#"
+                        set -o errexit &&
+                        exec /cachepot-dist scheduler --config {cfg}
+                    "#,
+                        cfg = scheduler_cfg_container_path.to_str().unwrap()
+                    ),
+                ])
+                .output()
+                .unwrap();
 
-        check_output(&output);
+            check_output(&output);
+            let ip = self.container_ip(&scheduler_name);
+            let url = format!("http://{}:{}", ip, SCHEDULER_PORT);
+            let scheduler_url = reqwest::Url::parse(&url).unwrap();
+            ServerHandle::Container {
+                cid: scheduler_name,
+                url: HTTPUrl::from_url(scheduler_url.clone()),
+            }
+        } else {
+            let mut cmd = Command::new(cachepot_dist_path());
+            cmd.env("CACHEPOT_NO_DAEMON", "1")
+                .env("RUST_BACKTRACE", "1")
+                .arg("scheduler")
+                .arg("--config")
+                .arg(scheduler_cfg_path);
+            let mut child = cmd.spawn().unwrap();
+            eprintln!("\nSpawned child scheduler with PID: {}", child.id());
+            match child.try_wait() {
+                Ok(None) => {}
+                _ => panic!("Couldn't spawn scheduler"),
+            }
 
-        let scheduler_url = self.scheduler_url();
+            ServerHandle::Process {
+                pid: Pid::from_raw(child.id().try_into().unwrap()),
+                url: HTTPUrl::from_str(&format!("http://127.0.0.1:{}", SCHEDULER_PORT)).unwrap(),
+            }
+        };
+
+        let scheduler_url = scheduler.url().clone();
+        self.scheduler = Some(scheduler);
 
         wait_for_http(
             &self.client,
@@ -317,6 +389,7 @@ impl DistSystem {
                         ) {
                             break Ok(());
                         } else {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {}
@@ -327,67 +400,106 @@ impl DistSystem {
         wait_for(status_fut, MAX_STARTUP_WAIT).await;
     }
 
-    pub async fn add_server(&mut self) -> ServerHandle {
+    pub async fn add_server(&mut self) -> ServerId {
         let server_cfg_relpath = format!("server-cfg-{}.json", self.server_names.len());
         let server_cfg_path = self.tmpdir.join(&server_cfg_relpath);
-        let server_cfg_container_path = Path::new(CONFIGS_CONTAINER_PATH).join(server_cfg_relpath);
 
-        let server_name = make_container_name("server");
-        let output = Command::new("docker")
-            .args(&[
-                "run",
-                // Important for the bubblewrap builder
-                "--privileged",
-                "--name",
-                &server_name,
-                "-e",
-                "RUST_LOG=cachepot=trace",
-                "-e",
-                "RUST_BACKTRACE=1",
-                "-v",
-                &format!("{}:/cachepot-dist", self.cachepot_dist.to_str().unwrap()),
-                "-v",
-                &format!(
-                    "{}:{}",
-                    self.tmpdir.to_str().unwrap(),
-                    CONFIGS_CONTAINER_PATH
-                ),
-                "-d",
-                DIST_IMAGE,
-                "bash",
-                "-c",
-                &format!(
-                    r#"
-                    set -o errexit &&
-                    while [ ! -f {cfg}.ready ]; do sleep 0.1; done &&
-                    exec /cachepot-dist worker --config {cfg}
-                "#,
-                    cfg = server_cfg_container_path.to_str().unwrap()
-                ),
-            ])
-            .output()
-            .unwrap();
-        self.server_names.push(server_name.clone());
+        let handle = if let ExecStrategy::Docker = exec_strategy() {
+            let server_cfg_container_path =
+                Path::new(CONFIGS_CONTAINER_PATH).join(server_cfg_relpath);
 
-        check_output(&output);
+            let server_name = make_container_name("server");
+            let output = Command::new("docker")
+                .args(&[
+                    "run",
+                    // Important for the bubblewrap builder
+                    "--privileged",
+                    "--name",
+                    &server_name,
+                    "-e",
+                    "RUST_LOG=cachepot=trace",
+                    "-e",
+                    "CACHEPOT_LOG=trace",
+                    "-e",
+                    "RUST_BACKTRACE=1",
+                    "-v",
+                    &format!("{}:/cachepot-dist", self.cachepot_dist.to_str().unwrap()),
+                    "-v",
+                    &format!(
+                        "{}:{}",
+                        self.tmpdir.to_str().unwrap(),
+                        CONFIGS_CONTAINER_PATH
+                    ),
+                    "-d",
+                    DIST_IMAGE,
+                    "bash",
+                    "-c",
+                    &format!(
+                        r#"
+                        set -o errexit &&
+                        while [ ! -f {cfg}.ready ]; do sleep 0.1; done &&
+                        exec /cachepot-dist worker --config {cfg}
+                    "#,
+                        cfg = server_cfg_container_path.to_str().unwrap()
+                    ),
+                ])
+                .output()
+                .unwrap();
+            check_output(&output);
 
-        let server_ip = self.container_ip(&server_name);
-        let server_cfg = cachepot_server_cfg(&self.tmpdir, self.scheduler_url(), server_ip);
-        fs::File::create(&server_cfg_path)
-            .unwrap()
-            .write_all(&serde_json::to_vec(&server_cfg).unwrap())
-            .unwrap();
-        fs::File::create(format!("{}.ready", server_cfg_path.to_str().unwrap())).unwrap();
+            let server_ip = self.container_ip(&server_name);
+            let server_cfg = cachepot_server_cfg(&self.tmpdir, self.scheduler_url(), server_ip);
+            fs::File::create(&server_cfg_path)
+                .unwrap()
+                .write_all(&serde_json::to_vec(&server_cfg).unwrap())
+                .unwrap();
+            fs::File::create(format!("{}.ready", server_cfg_path.to_str().unwrap())).unwrap();
+            let url = HTTPUrl::from_url(
+                reqwest::Url::parse(&format!("https://{}:{}", server_ip, SERVER_PORT)).unwrap(),
+            );
+            ServerHandle::Container {
+                cid: server_name,
+                url,
+            }
+        } else {
+            let server_ip = std::net::Ipv4Addr::LOCALHOST;
+            let server_cfg = cachepot::config::worker::Config {
+                builder: cachepot::config::worker::BuilderType::Overlay {
+                    build_dir: self.tmpdir.join("server-builddir"),
+                    bwrap_path: PathBuf::from("/usr/bin/bwrap"),
+                },
+                cache_dir: self.tmpdir.join("server-cache"),
+                ..cachepot_server_cfg(&self.tmpdir, self.scheduler_url(), server_ip.into())
+            };
+            fs::File::create(&server_cfg_path)
+                .unwrap()
+                .write_all(&serde_json::to_vec(&server_cfg).unwrap())
+                .unwrap();
 
-        let url = HTTPUrl::from_url(
-            reqwest::Url::parse(&format!("https://{}:{}", server_ip, SERVER_PORT)).unwrap(),
-        );
-        let handle = ServerHandle::Container {
-            cid: server_name,
-            url,
+            let mut cmd = Command::new(cachepot_dist_path());
+            cmd.env("CACHEPOT_NO_DAEMON", "1")
+                .env("RUST_BACKTRACE", "1")
+                .arg("worker")
+                .arg("--config")
+                .arg(server_cfg_path);
+            let mut child = cmd.spawn().unwrap();
+            eprintln!("\nSpawned child build server with PID: {}", child.id());
+            match child.try_wait() {
+                Ok(None) => {}
+                _ => panic!("Couldn't spawn scheduler"),
+            }
+
+            ServerHandle::Process {
+                pid: Pid::from_raw(child.id().try_into().unwrap()),
+                url: HTTPUrl::from_str(&format!("https://{}:{}", server_ip, SERVER_PORT)).unwrap(),
+            }
         };
-        self.wait_server_ready(&handle).await;
-        handle
+
+        self.wait_server_ready(handle.url().clone()).await;
+        self.server_handles.insert(self.servers_counter, handle);
+        let id = self.servers_counter;
+        self.servers_counter += 1;
+        id
     }
 
     pub async fn add_custom_server<S: dist::WorkerIncoming + 'static>(
@@ -414,12 +526,19 @@ impl DistSystem {
 
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
+        self.wait_server_ready(url.clone()).await;
         let handle = ServerHandle::AsyncTask { handle, url };
-        self.wait_server_ready(&handle).await;
         handle
     }
 
-    pub async fn restart_server(&mut self, handle: &ServerHandle) {
+    pub async fn restart_server(&mut self, id: &ServerId) {
+        let handle = match self.server_handles.get(id) {
+            Some(handle) => handle,
+            None => {
+                error!("ServerId {} is unknown", id);
+                return;
+            }
+        };
         match handle {
             ServerHandle::Container { cid, url: _ } => {
                 let output = Command::new("docker")
@@ -430,17 +549,19 @@ impl DistSystem {
             }
             ServerHandle::AsyncTask { handle: _, url: _ } => {
                 // TODO: pretty easy, just no need yet
-                panic!("restart not yet implemented for pids")
+            }
+            ServerHandle::Process { pid: _, url: _ } => {
+                // NOTE: Ideally we could restructure servers to listen to SIGHUP
+                // and reload configuration/restart the servers
+                // For now, let's just ignore it and keep chugging along
+                // TODO: restart the process?
             }
         }
-        self.wait_server_ready(handle).await
+        let url = handle.url().clone();
+        self.wait_server_ready(url).await
     }
 
-    pub async fn wait_server_ready(&mut self, handle: &ServerHandle) {
-        let url = match handle {
-            ServerHandle::Container { cid: _, url }
-            | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
-        };
+    pub async fn wait_server_ready(&mut self, url: HTTPUrl) {
         wait_for_http(
             &self.client,
             url,
@@ -464,6 +585,7 @@ impl DistSystem {
                         ) {
                             break Ok(());
                         } else {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {}
@@ -475,9 +597,7 @@ impl DistSystem {
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
-        let ip = self.container_ip(self.scheduler_name.as_ref().unwrap());
-        let url = format!("http://{}:{}", ip, SCHEDULER_PORT);
-        HTTPUrl::from_url(reqwest::Url::parse(&url).unwrap())
+        self.scheduler.as_ref().unwrap().url().clone()
     }
 
     async fn scheduler_status(&self) -> SchedulerStatusResult {
@@ -506,12 +626,20 @@ impl DistSystem {
 
     // The interface that the host sees on the docker network (typically 'docker0')
     fn host_interface_ip(&self) -> IpAddr {
+        let scheduler_name = match self.scheduler.as_ref().unwrap() {
+            ServerHandle::Container { cid, .. } => cid,
+            ServerHandle::Process { .. } => match exec_strategy() {
+                ExecStrategy::Spawn => return std::net::Ipv4Addr::LOCALHOST.into(),
+                ExecStrategy::Docker => unreachable!("We only spawn schedulers via docker"),
+            },
+            ServerHandle::AsyncTask { handle: _, url: _ } => todo!(),
+        };
         let output = Command::new("docker")
             .args(&[
                 "inspect",
                 "--format",
                 "{{ .NetworkSettings.Gateway }}",
-                self.scheduler_name.as_ref().unwrap(),
+                scheduler_name,
             ])
             .output()
             .unwrap();
@@ -545,37 +673,33 @@ impl Drop for DistSystem {
         let mut logs = vec![];
         let mut outputs = vec![];
 
-        if let Some(scheduler_name) = self.scheduler_name.as_ref() {
+        let handles = self.scheduler.iter().chain(self.server_handles.values());
+        let container_names = handles.filter_map(|s| match s {
+            ServerHandle::Container { cid, .. } => Some(cid),
+            _ => None,
+        });
+        for container_name in container_names {
             droperr!(Command::new("docker")
-                .args(&["logs", scheduler_name])
+                .args(&["logs", container_name])
                 .output()
-                .map(|o| logs.push((scheduler_name, o))));
+                .map(|o| logs.push((container_name, o))));
             droperr!(Command::new("docker")
-                .args(&["kill", scheduler_name])
+                .args(&["kill", container_name])
                 .output()
-                .map(|o| outputs.push((scheduler_name, o))));
+                .map(|o| outputs.push((container_name, o))));
             droperr!(Command::new("docker")
-                .args(&["rm", "-f", scheduler_name])
+                .args(&["rm", "-f", container_name])
                 .output()
-                .map(|o| outputs.push((scheduler_name, o))));
-        }
-        for server_name in self.server_names.iter() {
-            droperr!(Command::new("docker")
-                .args(&["logs", server_name])
-                .output()
-                .map(|o| logs.push((server_name, o))));
-            droperr!(Command::new("docker")
-                .args(&["kill", server_name])
-                .output()
-                .map(|o| outputs.push((server_name, o))));
-            droperr!(Command::new("docker")
-                .args(&["rm", "-f", server_name])
-                .output()
-                .map(|o| outputs.push((server_name, o))));
+                .map(|o| outputs.push((container_name, o))));
         }
         // TODO: they will die with the runtime, but correctly waiting for them
         // may be only possible when we have async Drop.
-        for _handle in self.server_handles.iter() {}
+        for handle in self.scheduler.iter().chain(self.server_handles.values()) {
+            if let ServerHandle::Process { pid, .. } = handle {
+                nix::sys::signal::kill(*pid, nix::sys::signal::Signal::SIGTERM).unwrap();
+                let _status = nix::sys::wait::waitpid(*pid, None).unwrap();
+            }
+        }
 
         for (
             container,

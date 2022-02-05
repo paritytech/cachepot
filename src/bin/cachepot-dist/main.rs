@@ -16,11 +16,11 @@ use cachepot::dist::{
     SchedulerIncoming, SchedulerOutgoing, SchedulerStatusResult, SubmitToolchainResult, TcCache,
     Toolchain, ToolchainReader, UpdateJobStateResult, WorkerIncoming, WorkerNonce, WorkerOutgoing,
 };
+use cachepot::init_logging;
 use cachepot::util::daemonize;
 use jsonwebtoken as jwt;
 use rand::{rngs::OsRng, RngCore};
 use std::collections::{btree_map, BTreeMap, HashMap, HashSet};
-use std::env;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -384,15 +384,6 @@ async fn run(command: Command) -> Result<i32> {
             )
             .context("Failed to create cachepot HTTP server instance")?;
             void::unreachable(http_server.start().await?)
-        }
-    }
-}
-
-fn init_logging() {
-    if env::var("RUST_LOG").is_ok() {
-        match env_logger::try_init() {
-            Ok(_) => (),
-            Err(e) => panic!("Failed to initalize logging: {:?}", e),
         }
     }
 }

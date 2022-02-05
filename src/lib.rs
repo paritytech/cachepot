@@ -62,8 +62,6 @@ pub mod util;
 
 use std::env;
 
-const LOGGING_ENV: &str = "CACHEPOT_LOG";
-
 pub fn main() {
     init_logging();
     std::process::exit(match cmdline::parse() {
@@ -88,9 +86,96 @@ pub fn main() {
     });
 }
 
-fn init_logging() {
+pub fn init_logging() {
+    const LOGGING_ENV: &str = "CACHEPOT_LOG";
+
+    use env_logger::fmt::{Color, Style};
+    use log::Level;
+    use std::io::Write;
+
+    /// The available service type that cachepot can run as.
+    #[derive(Copy, Clone)]
+    enum Kind {
+        /// A service that connects a coordinator and a remote worker to execute
+        /// a remote build.
+        DistScheduler,
+        /// A service that's used to directly perform remote sandbox compilation
+        DistWorker,
+        /// A background service used by the cachepot compilation wrapper (client)
+        /// to either re-use local compilation cache or schedule a remote
+        /// compilation via a remote scheduler
+        Coordinator,
+        /// A wrapper that masquerades as a compiler but spawns (or talks to) a
+        /// coordinator to perform the actual compilation locally or offload it
+        /// to a distributed cluster (in both cases we can re-use cached artifacts)
+        Client,
+    }
+
+    impl std::fmt::Display for Kind {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "{}",
+                match self {
+                    Kind::DistScheduler => "dist scheduler",
+                    Kind::DistWorker => "dist worker",
+                    Kind::Coordinator => "coordinator",
+                    Kind::Client => "client",
+                }
+            )
+        }
+    }
+
+    // TODO: That's a rough heuristic - share detection logic from cmdline.rs
+    let kind = if env::var("CACHEPOT_START_COORDINATOR").is_ok()
+        || env::args_os().any(|a| a == "--start-coordinator")
+    {
+        Kind::Coordinator
+    } else {
+        match std::env::args().nth(1).as_deref() {
+            Some("scheduler") => Kind::DistScheduler,
+            Some("worker") => Kind::DistWorker,
+            _ => Kind::Client,
+        }
+    };
+
+    let color_for_kind = |kind| match kind {
+        Kind::DistScheduler => Color::Yellow,
+        Kind::DistWorker => Color::Cyan,
+        Kind::Coordinator => Color::Blue,
+        Kind::Client => Color::Green,
+    };
+
+    let default_level_style = |mut level_style: Style, level: Level| {
+        match level {
+            Level::Trace => level_style.set_color(Color::Cyan),
+            Level::Debug => level_style.set_color(Color::Blue),
+            Level::Info => level_style.set_color(Color::Green),
+            Level::Warn => level_style.set_color(Color::Yellow),
+            Level::Error => level_style.set_color(Color::Red).set_bold(true),
+        };
+        level_style
+    };
+
     if env::var(LOGGING_ENV).is_ok() {
-        match env_logger::Builder::from_env(LOGGING_ENV).try_init() {
+        let mut builder = env_logger::Builder::from_env(LOGGING_ENV);
+        // That's mostly what env_logger does by default but we also attach the
+        // PID and kind of the cachepot executable due to its multi-process nature
+        builder.format(move |f, record| {
+            write!(
+                f,
+                "{}",
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+            )?;
+            let style = default_level_style(f.style(), record.level());
+            write!(f, " {:<5}", style.value(record.level()))?;
+            write!(f, " [PID {}]", std::process::id())?;
+            let mut style = f.style();
+            style.set_color(color_for_kind(kind));
+            write!(f, " {:>14}", style.value(kind))?;
+            writeln!(f, " {}", record.args())
+        });
+        match builder.try_init() {
             Ok(_) => (),
             Err(e) => panic!("Failed to initalize logging: {:?}", e),
         }
