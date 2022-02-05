@@ -31,7 +31,8 @@ jobs:
     - name: Setup mdbook-graphviz
       run: |
         sudo apt install -y graphviz
-        cargo install mdbook-graphviz
+        # FIXME: Don't specify git/rev once v0.1.4 is released to crates.io
+        cargo install mdbook-graphviz --git https://github.com/dylanowen/mdbook-graphviz --rev 8e7f9d75823e5e64e3204e70a8d15e223e32fca9
 
     - name: Setup mdbook-mermaid
       run: |
