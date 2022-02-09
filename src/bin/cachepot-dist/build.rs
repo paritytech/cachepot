@@ -534,7 +534,7 @@ fn new_userns<B: FnOnce() -> Result<BuildResult>>(build_fn: B) -> Result<BuildRe
             let results: BuildResult = bincode::deserialize_from(rx)?;
 
             Ok(results)
-        },
+        }
         Ok(..) => {
             warn!("Error waiting for child build");
             Err(anyhow!("Error waiting for a child build"))
