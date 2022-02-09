@@ -478,8 +478,8 @@ fn new_userns<B: FnOnce() -> Result<BuildResult>>(build_fn: B) -> Result<BuildRe
             let do_work = move || -> Result<BuildResult> {
                 // Fetch uid/gid of the parent namespace user in order to
                 // subsequently map to it in the child user namespace
-                let uid = nix::unistd::Uid::current();
-                let gid = nix::unistd::Uid::current();
+                let euid = nix::unistd::Uid::effective();
+                let egid = nix::unistd::Gid::effective();
 
                 // We must call this from a main thread, hence why we forked
                 // in the first place.
@@ -494,11 +494,11 @@ fn new_userns<B: FnOnce() -> Result<BuildResult>>(build_fn: B) -> Result<BuildRe
                 // Equivalent of `unshare --map-current-user` - we need that
                 // to mount overlayfs and access files owned by the parent
                 // namespace user
-                std::fs::write("/proc/self/uid_map", format!("{} {} 1", uid, uid))
+                std::fs::write("/proc/self/uid_map", format!("{} {} 1", euid, euid))
                     .context("Failed writing to uid_map")?;
                 std::fs::write("/proc/self/setgroups", "deny")
                     .context("Failed writing to setgroups")?;
-                std::fs::write("/proc/self/gid_map", format!("{} {} 1", gid, gid))
+                std::fs::write("/proc/self/gid_map", format!("{} {} 1", egid, egid))
                     .context("Failed writing to gid_map")?;
 
                 // Make sure that all future mount changes are private to this namespace
