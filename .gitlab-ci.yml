@@ -113,6 +113,8 @@ stable-dist-test:
     FEATURES:                      "dist-tests"
     DIST_EXEC_STRATEGY:            "spawn"
     CACHEPOT_LOG:                  "cachepot=trace"
+  # TODO(#143): Fix and enforce running unprivileged dist test suite
+  allow_failure:                   true
   script:
     - uname -r
     - cat /proc/sys/kernel/unprivileged_userns_clone
