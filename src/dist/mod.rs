@@ -392,12 +392,12 @@ pub struct CompileCommand {
 // process::Output is not serialize so we have a custom Output type. However,
 // we cannot encode all information in here, such as Unix signals, as the other
 // end may not understand them (e.g. if it's Windows)
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessOutput {
-    pub code: i32,
-    pub stdout: Vec<u8>,
-    pub stderr: Vec<u8>,
+    code: i32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 impl ProcessOutput {
     #[cfg(unix)]
