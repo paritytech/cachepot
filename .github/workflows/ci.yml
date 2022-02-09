@@ -61,9 +61,8 @@ jobs:
             extra_desc: dist-worker
             extra_args: --no-default-features --features=dist-tests test_dist_ -- --test-threads 1
             cachepot_log: cachepot=trace
+            cachepot_sandbox: userns
             dist_exec_strategy: spawn
-            # TODO(#143): Fix and enforce running unprivileged dist test suite
-            allow_failure: true
           - os: ubuntu-20.04
             rustc: stable
           - os: ubuntu-20.04
@@ -77,6 +76,7 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       DIST_EXEC_STRATEGY: ${{ matrix.dist_exec_strategy }}
+      CACHEPOT_SANDBOX: ${{ matrix.cachepot_sandbox }}
       CACHEPOT_LOG: ${{ matrix.cachepot_log }}
     steps:
       - name: Clone repository
