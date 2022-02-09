@@ -98,7 +98,7 @@ jobs:
         # see https://github.com/actions/toolkit/issues/399
       - name: Run tests
         run: cargo test --locked --all-targets --verbose ${{ matrix.extra_args }}
-        if: not(matrix.allow_failure)
+        if: "!matrix.allow_failure"
       - name: Run tests (allow failure)
         run: cargo test --locked --all-targets --verbose ${{ matrix.extra_args }} || echo "::warning::Job failure ignored!"
         if: matrix.allow_failure
