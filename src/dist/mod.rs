@@ -452,7 +452,7 @@ impl From<ProcessOutput> for process::Output {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutputData(Vec<u8>, u64);
 impl OutputData {
@@ -577,7 +577,6 @@ pub enum SubmitToolchainResult {
 
 // BuildResult
 
-#[derive(Debug)]
 pub struct BuildResult {
     pub output: ProcessOutput,
     pub outputs: Vec<(String, OutputData)>,
