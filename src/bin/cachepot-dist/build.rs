@@ -111,7 +111,7 @@ impl OverlayBuilder {
     pub fn new(bubblewrap: PathBuf, dir: PathBuf) -> Result<Self> {
         info!("Creating overlay builder");
 
-        // TODO: Check kernel support for user namespaces
+        // TODO(#144): Check kernel support for user namespaces
 
         let out = Command::new(&bubblewrap)
             .arg("--version")
@@ -325,9 +325,9 @@ impl OverlayBuilder {
             }
 
             trace!("performing compile");
-            // FIXME: Adapt the notes for the user namespaces
             // Bubblewrap notes:
-            // - We're running as uid 0 (to do the mounts above), and so bubblewrap is run as uid 0
+            // - If we're running as uid 0 (to do the mounts above, if we're running without
+            //   entering a new unprivileged Linux user namespace), then the bubblewrap is run as uid 0
             // - There's special handling in bubblewrap to compare uid and euid - of interest to us,
             //   if uid == euid == 0, bubblewrap preserves capabilities (not good!) so we explicitly
             //   drop all capabilities
@@ -458,7 +458,7 @@ fn new_userns<B: FnOnce() -> Result<BuildResult>>(build_fn: B) -> Result<BuildRe
     // The reason why we need to fork in the first place is that creating
     // a new user namespace with `CLONE_NEWUSER` is required to be called
     // from a main thread, which fork() separates the calling thread as one.
-    // FIXME: Redesign this binary to be re-executable like
+    // FIXME(#145): Redesign this binary to be re-executable like
     // `cachepot-dist sandbox` (akin to server/scheduler), which would enter
     // the child namespace in the init function, passing the outputs via
     // shared pipes or a shared tempdir.
@@ -522,7 +522,10 @@ fn new_userns<B: FnOnce() -> Result<BuildResult>>(build_fn: B) -> Result<BuildRe
                 .and_then(|results| tx.write_all(&results).context("Can't pipe build results"))
             {
                 Ok(..) => std::process::exit(0),
-                Err(..) => std::process::exit(1),
+                Err(err) => {
+                    error!("Error running build in a bubblewrap fork child: {}", err);
+                    std::process::exit(1)
+                }
             }
         }
     };
