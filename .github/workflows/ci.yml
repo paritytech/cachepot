@@ -94,14 +94,8 @@ jobs:
       - name: Build tests
         run: cargo test --no-run --locked --all-targets --verbose ${{ matrix.extra_args }}
 
-        # FIXME: Deduplicate this once 'allow-failure' is implemented,
-        # see https://github.com/actions/toolkit/issues/399
       - name: Run tests
         run: cargo test --locked --all-targets --verbose ${{ matrix.extra_args }}
-        if: "!matrix.allow_failure"
-      - name: Run tests (allow failure)
-        run: cargo test --locked --all-targets --verbose ${{ matrix.extra_args }} || echo "::warning::Job failure ignored!"
-        if: matrix.allow_failure
   smoke:
     name: smoke test ${{ matrix.rustc || 'stable' }} ${{ matrix.target_repository }}
     needs: [build]
