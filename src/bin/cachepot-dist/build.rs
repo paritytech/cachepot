@@ -561,6 +561,9 @@ impl BuilderIncoming for OverlayBuilder {
             .context("failed to prepare overlay dirs")?;
         debug!("Performing build in {:?}", overlay);
         let res = Self::perform_build(&self.bubblewrap, command, inputs_rdr, outputs, &overlay);
+        if let Err(e) = &res {
+            warn!("Error performing build: {}", e);
+        }
         debug!("Finishing with overlay");
         self.finish_overlay(&tc, overlay);
         debug!("Returning result");
