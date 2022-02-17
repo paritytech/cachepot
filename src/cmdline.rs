@@ -13,30 +13,38 @@
 // limitations under the License.
 
 use crate::errors::*;
+use clap::{ArgEnum, ArgGroup, StructOpt};
 use std::convert::{TryFrom, TryInto};
 use std::env;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use structopt::{
-    clap::{arg_enum, AppSettings, ArgGroup},
-    StructOpt,
-};
 use strum::{EnumVariantNames, VariantNames};
 
-arg_enum! {
-    #[derive(EnumVariantNames, StructOpt, Debug)]
-    #[allow(non_camel_case_types)]
-    pub enum StatsFormat {
-        text,
-        json
+#[derive(Copy, Clone, EnumVariantNames, ArgEnum, StructOpt, Debug)]
+#[strum(serialize_all = "kebab_case")]
+pub enum StatsFormat {
+    Text,
+    Json,
+}
+
+impl std::str::FromStr for StatsFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        for variant in Self::value_variants() {
+            if variant.to_possible_value().unwrap().matches(s, false) {
+                return Ok(*variant);
+            }
+        }
+        Err(format!("Invalid variant: {}", s))
     }
 }
 
 #[derive(Debug, StructOpt)]
 #[structopt(
     rename_all = "kebab-case",
-    group = ArgGroup::with_name("flags"),
-    global_settings = &[AppSettings::TrailingVarArg],
+    trailing_var_arg = true,
+    group = ArgGroup::new("flags"),
     after_help = concat!(
 "Enabled features:\n",
 "    S3:        ", cfg!(feature = "s3"), "\n",
@@ -78,20 +86,15 @@ pub struct Command2 {
     #[structopt(
         long,
         required = false,
-        use_delimiter = true,
-        value_delimiter = " ",
+        use_value_delimiter = true,
+        value_delimiter = ' ',
         value_names = &["executable", "out"],
         takes_value = true,
         number_of_values = 2,
     )]
     package_toolchain: Vec<PathBuf>,
 
-    #[structopt(
-        long,
-        hidden = true,
-        group = "flags",
-        env = "CACHEPOT_START_COORDINATOR"
-    )]
+    #[structopt(long, hide = true, group = "flags", env = "CACHEPOT_START_COORDINATOR")]
     internal_start_coordinator: Option<String>,
 
     /// set output format of statistics
@@ -193,6 +196,6 @@ pub enum Command {
 
 /// Parse the commandline into a `Command` to execute.
 pub fn parse() -> Result<Command> {
-    let a = Command2::from_args();
+    let a = Command2::parse();
     Ok(a.try_into()?)
 }

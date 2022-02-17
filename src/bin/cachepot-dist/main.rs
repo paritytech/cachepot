@@ -28,7 +28,6 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use structopt::StructOpt;
 use syslog::Facility;
 
 mod build;
@@ -36,14 +35,15 @@ mod token_check;
 
 pub const INSECURE_DIST_WORKER_TOKEN: &str = "dangerously_insecure_worker";
 
-#[derive(StructOpt)]
+#[derive(clap::Parser)]
 enum Command {
+    #[clap(subcommand)]
     Auth(AuthSubcommand),
     Scheduler(SchedulerSubcommand),
     Worker(WorkerSubcommand),
 }
 
-#[derive(StructOpt)]
+#[derive(clap::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct SchedulerSubcommand {
     /// Use the scheduler config file at PATH
@@ -55,7 +55,7 @@ struct SchedulerSubcommand {
     syslog: Option<String>,
 }
 
-#[derive(StructOpt)]
+#[derive(clap::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct WorkerSubcommand {
     /// Use the worker config file at PATH
@@ -67,7 +67,7 @@ struct WorkerSubcommand {
     syslog: Option<String>,
 }
 
-#[derive(StructOpt)]
+#[derive(clap::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct GenerateSharedToken {
     /// Use the specified number of bits for randomness
@@ -75,7 +75,7 @@ struct GenerateSharedToken {
     bits: usize,
 }
 
-#[derive(StructOpt)]
+#[derive(clap::StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 struct GenerateJwtHS256WorkerToken {
     /// Use the key from the scheduler config file
@@ -83,15 +83,19 @@ struct GenerateJwtHS256WorkerToken {
     config: Option<PathBuf>,
 
     /// Use specified key to create the token
-    #[structopt(long, value_name = "KEY", required_unless = "config")]
+    #[structopt(long, value_name = "KEY", required_unless_present = "config")]
     secret_key: Option<String>,
 
     /// Generate a key for the specified worker
-    #[structopt(long, value_name = "WORKER_ADDR", required_unless = "secret_key")]
+    #[structopt(
+        long,
+        value_name = "WORKER_ADDR",
+        required_unless_present = "secret_key"
+    )]
     worker: WorkerUrl,
 }
 
-#[derive(StructOpt)]
+#[derive(clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AuthSubcommand {
     GenerateSharedToken(GenerateSharedToken),
@@ -103,6 +107,7 @@ enum AuthSubcommand {
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use clap::StructOpt;
     use tokio::select;
     use tokio::signal::unix::{signal, SignalKind};
 
@@ -112,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging();
 
     let run_fut = async move {
-        let cmd = Command::from_args();
+        let cmd = Command::parse();
         match run(cmd).await {
             Ok(s) => s,
             Err(e) => {
