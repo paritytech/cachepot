@@ -21,10 +21,10 @@ use std::path::PathBuf;
 use strum::{EnumVariantNames, VariantNames};
 
 #[derive(Copy, Clone, EnumVariantNames, ArgEnum, StructOpt, Debug)]
-#[allow(non_camel_case_types)]
+#[strum(serialize_all = "kebab_case")]
 pub enum StatsFormat {
-    text,
-    json,
+    Text,
+    Json,
 }
 
 impl std::str::FromStr for StatsFormat {
