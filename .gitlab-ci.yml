@@ -116,7 +116,7 @@ stable-dist-test:
     CACHEPOT_LOG:                  "cachepot=trace"
   script:
     - uname -a
-    - cargo test --verbose -no-default-features --features="${FEATURES}" test_dist_ -- --test-threads 1
+    - cargo test --verbose --no-default-features --features="${FEATURES}" test_dist_ -- --test-threads 1
 
 build:
   <<:                              *docker-env
