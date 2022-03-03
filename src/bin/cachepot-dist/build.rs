@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use anyhow::{anyhow, bail, Context, Error, Result};
+use cachepot::config::worker::OverlayDriver;
 use cachepot::dist::{
     BuildResult, BuilderIncoming, CompileCommand, InputsReader, OutputData, ProcessOutput, TcCache,
     Toolchain,
@@ -92,6 +93,7 @@ fn join_suffix<P: AsRef<Path>>(path: &Path, suffix: P) -> PathBuf {
 struct OverlaySpec {
     build_dir: PathBuf,
     toolchain_dir: PathBuf,
+    driver: OverlayDriver,
 }
 
 #[derive(Debug, Clone)]
@@ -104,14 +106,20 @@ struct DeflatedToolchain {
 pub struct OverlayBuilder {
     bubblewrap: PathBuf,
     dir: PathBuf,
+    driver: OverlayDriver,
     toolchain_dir_map: Mutex<HashMap<Toolchain, DeflatedToolchain>>,
 }
 
 impl OverlayBuilder {
-    pub fn new(bubblewrap: PathBuf, dir: PathBuf) -> Result<Self> {
+    pub fn new(bubblewrap: PathBuf, dir: PathBuf, driver: OverlayDriver) -> Result<Self> {
         info!("Creating overlay builder");
 
-        // TODO(#144): Check kernel support for user namespaces
+        match OverlayBuilder {
+            OverlayBuilder::FuseOverlayfs => unimplemented!(),
+            OverlayBuilder::Native => {
+                // TODO(#144): Check kernel support for user namespaces
+            }
+        }
 
         let out = Command::new(&bubblewrap)
             .arg("--version")
@@ -145,6 +153,7 @@ impl OverlayBuilder {
         let ret = Self {
             bubblewrap,
             dir,
+            driver,
             toolchain_dir_map: Mutex::new(HashMap::new()),
         };
         ret.cleanup()?;
@@ -253,6 +262,7 @@ impl OverlayBuilder {
         Ok(OverlaySpec {
             build_dir,
             toolchain_dir,
+            driver,
         })
     }
 
@@ -293,15 +303,27 @@ impl OverlayBuilder {
         };
 
         namespaced(move || {
-            Overlay::writable(
-                iter::once(overlay.toolchain_dir.as_path()),
-                upper_dir,
-                work_dir,
-                &target_dir,
-                // This error is unfortunately not Send+Sync
-            )
-            .mount()
-            .map_err(|e| anyhow!("Failed to mount overlay FS: {}", e.to_string()))?;
+            match overlay.driver {
+                OverlayDriver::Native => {
+                    Overlay::writable(
+                        iter::once(overlay.toolchain_dir.as_path()),
+                        upper_dir,
+                        work_dir,
+                        &target_dir,
+                        // This error is unfortunately not Send+Sync
+                    )
+                    .mount()
+                    .map_err(|e| anyhow!("Failed to mount overlay FS: {}", e.to_string()))?;
+                }
+                OverlayDriver::FuseOverlayfs => {
+                    Command::new("fuse-overlayfs")
+                    .arg("-o").arg(format!("lowerdir={}", overlay.toolchain_dir.display()))
+                    .arg("-o").arg(format!("upperdir={}", upper_dir.display()))
+                    .arg("-o").arg(format!("workdir={}", work.display()))
+                    .arg("-o").arg(format!("targetdir={}", target_dir.display()))
+                    .status().unwrap();
+                }
+            }
 
             trace!("copying in inputs");
             // Note that we don't unpack directly into the upperdir since there overlayfs has some
@@ -412,6 +434,7 @@ impl OverlayBuilder {
         let OverlaySpec {
             build_dir,
             toolchain_dir: _,
+            driver: _,
         } = overlay;
         if let Err(e) = fs::remove_dir_all(&build_dir) {
             error!(

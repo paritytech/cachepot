@@ -351,8 +351,9 @@ async fn run(command: Command) -> Result<i32> {
                 worker::BuilderType::Overlay {
                     bwrap_path,
                     build_dir,
+                    driver,
                 } => Box::new(
-                    build::OverlayBuilder::new(bwrap_path, build_dir)
+                    build::OverlayBuilder::new(bwrap_path, build_dir, driver)
                         .context("Overlay builder failed to start")?,
                 ),
             };

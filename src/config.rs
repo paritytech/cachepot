@@ -854,9 +854,25 @@ pub mod worker {
         Docker,
         #[serde(rename = "overlay")]
         Overlay {
+            driver: OverlayDriver,
             build_dir: PathBuf,
             bwrap_path: PathBuf,
         },
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub enum OverlayDriver {
+        #[serde(rename = "fuse-overlayfs")]
+        FuseOverlayfs,
+        #[serde(rename = "native")]
+        Native,
+    }
+
+    impl Default for OverlayDriver {
+        fn default() -> Self {
+            Self::Native
+        }
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -1070,6 +1086,42 @@ public = false
                 toolchain_cache_size: 5368709120,
                 rewrite_includes_only: false,
             },
+        }
+    )
+}
+
+#[test]
+fn parse_worker_config() {
+    const CONFIG_STR: &str = r#"
+cache_dir = "/tmp/toolchains"
+public_addr = "192.168.1.1:10501"
+scheduler_url = "https://192.168.1.1"
+
+[builder]
+type = "overlay"
+build_dir = "/tmp/build"
+bwrap_path = "/usr/bin/bwrap"
+
+[scheduler_auth]
+type = "jwt_token"
+token = "my worker's token"
+"#;
+    use worker::{Config, BuilderType, OverlayDriver, SchedulerAuth};
+    let config: worker::Config = toml::from_str(CONFIG_STR).unwrap();
+    assert_eq!(
+        config,
+        Config {
+            builder: BuilderType::Overlay {
+                cache_dir = PathBuf::from("/tmp/toolchains"),
+                public_addr: HTTPUrl::try_parse("192.168.1.1:10501").unwrap(),
+                scheduler_url: WorkerUrl(HTTPUrl::try_parse("https://192.168.1.1").unwrap()),
+                builder: Builder::Overlay {
+                    driver: OverlayDriver::Native,
+                    build_dir: PathBuf::from("/tmp/build"),
+                    bwrap_path: PathBuf::from("/usr/bin/bwrap"),
+                },
+                scheduler_auth: SchedulerAuth::JwtToken { token: String::from("my worker's token") }
+            }
         }
     )
 }
