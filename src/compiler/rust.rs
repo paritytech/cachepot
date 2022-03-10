@@ -708,7 +708,7 @@ impl RustupProxy {
                 "Failed to discover a rustup executable, but rustc behaves like a proxy"
             ))),
             Ok(ProxyPath::None) => Ok(Ok(None)),
-            Ok(ProxyPath::Candidate(proxy_executable)) => {
+            Ok(ProxyPath::Candidate(ref proxy_executable)) => {
                 // verify the candidate is a rustup
                 let mut child = creator.new_command_sync(proxy_executable);
                 child.env_clear().envs(ref_env(env)).args(&["--version"]);
@@ -718,7 +718,7 @@ impl RustupProxy {
                     .map_err(|_e| anyhow!("Response of `rustup --version` is not valid UTF-8"))?;
                 Ok(if stdout.trim().starts_with("rustup ") {
                     trace!("PROXY rustup --version produced: {}", &stdout);
-                    Self::new(&proxy_executable).map(Some)
+                    Self::new(proxy_executable).map(Some)
                 } else {
                     Err(anyhow!("Unexpected output or `rustup --version`"))
                 })
