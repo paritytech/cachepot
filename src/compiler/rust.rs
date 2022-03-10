@@ -647,7 +647,7 @@ impl RustupProxy {
         // `rustc +stable` returns retcode 1 (!=0) if it is installed via i.e. rpm packages
 
         // verify rustc is proxy
-        let mut child = creator.new_command_sync(compiler_executable.to_owned());
+        let mut child = creator.new_command_sync(compiler_executable);
         child.env_clear().envs(ref_env(env)).args(&["+stable"]);
         let state = run_input_output(child, None).await.map(move |output| {
             if output.status.success() {
@@ -710,7 +710,7 @@ impl RustupProxy {
             Ok(ProxyPath::None) => Ok(Ok(None)),
             Ok(ProxyPath::Candidate(proxy_executable)) => {
                 // verify the candidate is a rustup
-                let mut child = creator.new_command_sync(proxy_executable.to_owned());
+                let mut child = creator.new_command_sync(proxy_executable);
                 child.env_clear().envs(ref_env(env)).args(&["--version"]);
                 let rustup_candidate_check = run_input_output(child, None).await?;
 
