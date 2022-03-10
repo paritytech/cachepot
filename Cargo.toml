@@ -1,6 +1,6 @@
 [package]
 name = "cachepot"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 authors = [
     "Bernhard Schuster <bernhard@ahoi.io>",
     "Igor Matuszewski <xanewok@gmail.com>",
