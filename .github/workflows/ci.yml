@@ -259,7 +259,7 @@ jobs:
           sudo apt-get install musl-dev:arm64 binutils-multiarch gcc-10-aarch64-linux-gnu libc6-dev-arm64-cross
           apt-get download musl-tools:arm64
           sudo dpkg-deb -x musl-tools_*_arm64.deb /
-          sed 2iREALGCC=aarch64-linux-gnu-gcc /usr/bin/musl-gcc | sudo tee /usr/bin/aarch64-linux-musl-gcc > /dev/null
+          sed 2iREALGCC=aarch64-linux-gnu-gcc-10 /usr/bin/musl-gcc | sudo tee /usr/bin/aarch64-linux-musl-gcc > /dev/null
           sudo chmod +x /usr/bin/aarch64-linux-musl-gcc
         if: ${{ matrix.target == 'aarch64-unknown-linux-musl' }}
 
