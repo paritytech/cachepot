@@ -16,7 +16,6 @@ use crate::util::fs::{self, File};
 use directories::ProjectDirs;
 use regex::Regex;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer};
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 use serde::ser::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::env;
@@ -89,10 +88,9 @@ pub fn parse_size(val: &str) -> Option<u64> {
         })
 }
 
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HTTPUrl(reqwest::Url);
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl Serialize for HTTPUrl {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -101,7 +99,7 @@ impl Serialize for HTTPUrl {
         serializer.serialize_str(self.0.as_str())
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl<'a> Deserialize<'a> for HTTPUrl {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
@@ -113,7 +111,7 @@ impl<'a> Deserialize<'a> for HTTPUrl {
         Ok(HTTPUrl(url))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 fn parse_http_url(url: &str) -> Result<reqwest::Url> {
     let url = reqwest::Url::parse(url)?;
 
@@ -126,7 +124,7 @@ fn parse_http_url(url: &str) -> Result<reqwest::Url> {
     }
     Ok(url)
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl HTTPUrl {
     pub fn from_url(u: reqwest::Url) -> Self {
         HTTPUrl(u)
@@ -143,7 +141,7 @@ impl HTTPUrl {
             .expect("HTTPUrl always has a valid host; qed")
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl FromStr for HTTPUrl {
     type Err = anyhow::Error;
 
@@ -156,12 +154,13 @@ impl FromStr for HTTPUrl {
         Ok(HTTPUrl(url))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl fmt::Display for HTTPUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
+
 // This is the extended `HTTPUrl` with re-implemented
 // `Serialize` and `Deserialize` traits. It is known that
 // servers only use the `https` protocol and as such we can
@@ -169,10 +168,9 @@ impl fmt::Display for HTTPUrl {
 // of such format is that it can be used in un-urlencoded form as params:
 //
 // `https://localhost:10500/api/v1/scheduler/server_certificate/localhost:10603/`
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct WorkerUrl(pub HTTPUrl);
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl Serialize for WorkerUrl {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -187,7 +185,7 @@ impl Serialize for WorkerUrl {
         serializer.serialize_str(&helper)
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl<'a> Deserialize<'a> for WorkerUrl {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
@@ -200,7 +198,7 @@ impl<'a> Deserialize<'a> for WorkerUrl {
         Ok(WorkerUrl(HTTPUrl(url)))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl FromStr for WorkerUrl {
     type Err = anyhow::Error;
 
@@ -210,7 +208,7 @@ impl FromStr for WorkerUrl {
         Ok(WorkerUrl(HTTPUrl::from_str(&helper)?))
     }
 }
-#[cfg(any(feature = "dist-client", feature = "dist-worker"))]
+
 impl fmt::Display for WorkerUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

@@ -157,16 +157,20 @@ pub struct RustCompilation {
     sysroot: PathBuf,
     /// All arguments passed to rustc
     arguments: Vec<Argument<ArgData>>,
+    #[cfg_attr(not(feature = "dist-client"), allow(dead_code))]
     /// The compiler inputs.
     inputs: Vec<PathBuf>,
     /// The compiler outputs.
     outputs: HashMap<String, PathBuf>,
+    #[cfg_attr(not(feature = "dist-client"), allow(dead_code))]
     /// The directories searched for rlibs
     crate_link_paths: Vec<PathBuf>,
     /// The crate name being compiled.
     crate_name: String,
+    #[cfg_attr(not(feature = "dist-client"), allow(dead_code))]
     /// The crate types that will be generated
     crate_types: CrateTypes,
+    #[cfg_attr(not(feature = "dist-client"), allow(dead_code))]
     /// If dependency info is being emitted, the name of the dep info file.
     dep_info: Option<PathBuf>,
     /// The current working directory
