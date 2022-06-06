@@ -100,7 +100,7 @@ native-tls = "0.2.8"
 # dist-worker only
 crossbeam-utils = { version = "0.8", optional = true }
 libmount = { version = "0.1.10", optional = true }
-nix = { version = "0.19", optional = true }
+nix = { version = "0.24", optional = true }
 syslog = { version = "5", optional = true }
 void = { version = "1", optional = true }
 version-compare = { version = "0.0.11", optional = true }
