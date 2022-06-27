@@ -463,6 +463,10 @@ mod worker {
         pub enum Error {
             #[error("failed to assign job")]
             AssignJob,
+            #[error("failed to run a job")]
+            RunJob,
+            #[error("failed to submit toolchain")]
+            SubmitToolchain,
             #[error("authorization header is wrong")]
             AuthorizationHeaderBroken,
             #[error("bearer_auth_failed")]
@@ -719,6 +723,10 @@ mod worker {
                         }
                         Error::Bincode => Ok(err_and_log(e, StatusCode::BAD_REQUEST)),
                         Error::AssignJob => Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR)),
+                        Error::SubmitToolchain => {
+                            Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR))
+                        }
+                        Error::RunJob => Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR)),
                     }
                 } else {
                     Ok(
@@ -781,7 +789,7 @@ mod worker {
                 let res = handler
                     .handle_submit_toolchain(requester.as_ref(), job_id, toolchain_rdr)
                     .await
-                    .map_err(|_| warp::reject::custom(Error::AssignJob))?;
+                    .map_err(|_| warp::reject::custom(Error::SubmitToolchain))?;
 
                 Ok(res)
             }
@@ -797,12 +805,12 @@ mod worker {
                 let mut body = body.as_ref();
                 let bincode_length = body
                     .read_u32::<BigEndian>()
-                    .map_err(|_| warp::reject::custom(Error::AssignJob))?
+                    .map_err(|_| warp::reject::custom(Error::Bincode))?
                     as u64;
 
                 let mut bincode_reader = body.take(bincode_length);
                 let runjob = bincode::deserialize_from(&mut bincode_reader)
-                    .map_err(|_| warp::reject::custom(Error::AssignJob))?;
+                    .map_err(|_| warp::reject::custom(Error::Bincode))?;
 
                 let RunJobHttpRequest { command, outputs } = runjob;
 
@@ -815,7 +823,8 @@ mod worker {
                 let res = handler
                     .handle_run_job(requester.as_ref(), job_id, command, outputs, inputs_rdr)
                     .await
-                    .map_err(|_| warp::reject::custom(Error::AssignJob))?;
+                    .map_err(|e| log::error!("{:?}", e))
+                    .map_err(|_| warp::reject::custom(Error::RunJob))?;
 
                 Ok(res)
             }
