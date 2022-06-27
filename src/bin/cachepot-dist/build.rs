@@ -278,21 +278,37 @@ impl OverlayBuilder {
         } = compile_command;
         let cwd = Path::new(&cwd);
 
-        let work_dir = overlay.build_dir.join("work");
-        let upper_dir = overlay.build_dir.join("upper");
-        let target_dir = overlay.build_dir.join("target");
-
-        fs::create_dir(&work_dir).context("Failed to create overlay work directory")?;
-        fs::create_dir(&upper_dir).context("Failed to create overlay upper directory")?;
-        fs::create_dir(&target_dir).context("Failed to create overlay target directory")?;
-
+        let sandboxed = std::env::var("CACHEPOT_SANDBOX").as_deref() == Ok("userns");
         // If specified, run the build in a new user namespace
-        let namespaced = match std::env::var("CACHEPOT_SANDBOX").as_deref() {
-            Ok("userns") => new_userns,
-            _ => current_ns,
-        };
+        let namespaced = if sandboxed { new_userns } else { current_ns };
 
         namespaced(move || {
+            // Mount the build dir as tmpfs in in our sandbox.
+            // NOTE: Doing so is required when running under Docker with overlayfs driver.
+            // There seems to be a limitation of not being able to nest overlayfs
+            // work/upper dir on top of an existing overlayfs mount, so we work
+            // around that by mounting the entire build dir in memory, as tmpfs.
+            // This may also bring some speed improvements, since it skips the
+            // disk I/O but that has not been benchmarked yet.
+            if sandboxed {
+                nix::mount::mount(
+                    Some("tmpfs"),
+                    &overlay.build_dir,
+                    Some("tmpfs"),
+                    nix::mount::MsFlags::empty(),
+                    Option::<&str>::None,
+                )
+                .context("Failed to mount the build dir as tmpfs")?;
+            }
+
+            let work_dir = overlay.build_dir.join("work");
+            let upper_dir = overlay.build_dir.join("upper");
+            let target_dir = overlay.build_dir.join("target");
+
+            fs::create_dir(&work_dir).context("Failed to create overlay work directory")?;
+            fs::create_dir(&upper_dir).context("Failed to create overlay upper directory")?;
+            fs::create_dir(&target_dir).context("Failed to create overlay target directory")?;
+
             Overlay::writable(
                 iter::once(overlay.toolchain_dir.as_path()),
                 upper_dir,
