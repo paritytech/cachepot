@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::compiler;
+
 use crate::config::WorkerUrl;
 use rand::{rngs::OsRng, RngCore};
 use std::ffi::OsString;
