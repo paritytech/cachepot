@@ -116,6 +116,8 @@ stable-dist-test:
     CACHEPOT_LOG:                  "cachepot=trace"
   script:
     - uname -a
+    # https://github.com/paritytech/ci_cd/issues/490#issuecomment-1171587793
+    - mkdir /tmp/dummy_proc && mount -t proc proc /tmp/dummy_proc
     - cargo test --verbose --no-default-features --features="${FEATURES}" test_dist_ -- --test-threads 1
 
 build:
