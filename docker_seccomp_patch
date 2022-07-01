@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+
+require 'json'
+
+if ENV['JSON_PATH']
+  json_path = ENV['JSON_PATH']
+else
+  puts 'Unable to find the file to patch'
+  exit 1
+end
+
+file = File.read(json_path)
+
+# for such small script global var is acceptable
+$json = JSON.parse(file)
+
+def add_syscall(syscall)
+  if $json['syscalls'][0]['names'].include?(syscall)
+    puts "#{syscall} syscall is present"
+  else
+    $json['syscalls'][0]['names'].push(syscall)
+  end
+  # remove syscall arg from cap_sys_admin capability afterwards
+  if $json['syscalls'][13]['names'].include?(syscall)
+    $json['syscalls'][13]['names'].delete(syscall)
+  else
+    puts "#{syscall} syscall is absent from cap_sys_admin"
+  end
+end
+
+# unshare, mount and friends
+add_syscall('mount')
+add_syscall('umount')
+add_syscall('umount2')
+add_syscall('unshare')
+add_syscall('clone')
+add_syscall('clone3')
+
+# exempt from red hat's /usr/share/containers/seccomp.json
+# so rootless podman can be run too
+add_syscall('fsconfig')
+add_syscall('fsmount')
+add_syscall('fsopen')
+add_syscall('fspick')
+add_syscall('keyctl')
+add_syscall('move_mount')
+add_syscall('name_to_handle_at')
+add_syscall('open_tree')
+add_syscall('pivot_root')
+add_syscall('setns')
+add_syscall('syslog')
+
+json_dump = JSON.pretty_generate($json, indent: "\t")
+
+File.write(json_path, json_dump)
+
+if file == json_dump
+  puts "No changes were made to #{json_path}"
+else
+  puts "#{json_path} was patched"
+end
