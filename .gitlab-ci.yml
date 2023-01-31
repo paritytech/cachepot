@@ -16,11 +16,17 @@ variables:
   # this var is changed to "-:staging" when the CI image gets rebuilt
   # read more https://github.com/paritytech/scripts/pull/244
   CI_IMAGE:                        "paritytech/cachepot-ci:staging" # temporary override
+  BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
 
-workflow:
-  rules:
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH
+default:
+  cache:                           {}
+  interruptible:                   true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - unknown_failure
+      - api_failure
 
 .docker-env:                       &docker-env
   image:                           "${CI_IMAGE}"
@@ -29,21 +35,12 @@ workflow:
     - which clang && clang --version
     - rustc +stable --version
     - rustc +nightly --version
-    - sccache -s
-  retry:
-    max: 2
-    when:
-      - runner_system_failure
-      - unknown_failure
-      - api_failure
-  interruptible:                   true
   tags:
-    - linux-docker
+    - linux-docker-vm-c2
 
 .kubernetes-env:                   &kubernetes-env
   tags:
     - kubernetes-parity-build
-  interruptible:                   true
 
 .build-refs:                       &build-refs
   rules:
@@ -137,8 +134,8 @@ build:
 
 .build-push-docker-image:          &build-push-docker-image
   <<:                              *kubernetes-env
-  image:                           quay.io/buildah/stable
-  variables:                       &docker-build-vars
+  image:                           $BUILDAH_IMAGE
+  variables:
     GIT_STRATEGY:                  none
     DOCKERFILE:                    Dockerfile.vendor.cachepot-dist
     IMAGE_NAME:                    docker.io/paritytech/cachepot-dist
