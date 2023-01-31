@@ -104,7 +104,7 @@ nix = { version = "0.24", optional = true }
 syslog = { version = "5", optional = true }
 void = { version = "1", optional = true }
 version-compare = { version = "0.0.11", optional = true }
-warp = { version = "0.3.2", optional = true, features = ["tls"] }
+warp = { version = "0.3.3", optional = true, features = ["tls"] }
 thiserror = { version = "1.0.30", optional = true }
 
 # test only
