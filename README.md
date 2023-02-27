@@ -1,5 +1,17 @@
-[![Build Status](https://github.com/paritytech/cachepot/workflows/ci/badge.svg)](https://github.com/paritytech/cachepot/actions?query=workflow%3Aci)
-[![rust 1.56.1+ badge](https://img.shields.io/badge/rust-1.56.1+-93450a.svg)](https://blog.rust-lang.org/2021/11/01/Rust-1.56.1.html)
+# ⚠ 📦️ARCHIVED ⚠ 📦
+
+Cachepot has been archived/superseded in favor of uniting the efforts under
+upstream [sccache](https://github.com/mozilla/sccache/).
+
+If you're still using cachepot, at this point, all of the relevant changes should be backported
+to sccache or are in progress. Feel free to submit a porting request at sccache referencing a PR
+in cachepot.
+
+Thank you for using cachepot!
+
+The former cachepot maintainers 🌻️
+
+---------------------
 
 ![cachepot maskot image](./docs/book/src/cachepot.png)
 
